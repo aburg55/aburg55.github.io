@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Zoom to Survey Submission</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/light/main.css">
+  <script src="https://js.arcgis.com/4.28/"></script>
+  <style>
+    html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/layers/FeatureLayer",
+      "esri/Graphic"
+    ], function(Map, MapView, FeatureLayer, Graphic) {
+
+      // 1️⃣ Get the GlobalID from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const gid = urlParams.get('gid');
+      if (!gid) {
+        alert("No submission ID found in URL.");
+        return;
+      }
+
+      // 2️⃣ Create the map
+      const map = new Map({
+        basemap: "topo-vector"
+      });
+
+      const view = new MapView({
+        container: "viewDiv",
+        map: map,
+        zoom: 10,
+        center: [-82.5, 39.5] // approximate starting center
+      });
+
+      // 3️⃣ Add your Survey123 FeatureLayer
+      const surveyLayer = new FeatureLayer({
+        url: "https://services.arcgis.com/YOUR_ORG_ID/arcgis/rest/services/YOUR_LAYER_NAME/FeatureServer/0"
+      });
+      map.add(surveyLayer);
+
+      // 4️⃣ Query the feature by GlobalID
+      surveyLayer.when(() => {
+        surveyLayer.queryFeatures({
+          where: `globalid='${gid}'`,
+          outFields: ["*"],
+          returnGeometry: true
+        }).then((result) => {
+          if (result.features.length === 0) {
+            alert("Submission not found.");
+            return;
+          }
+
+          const feature = result.features[0];
+
+          // 5️⃣ Add a highlight graphic
+          const highlight = new Graphic({
+            geometry: feature.geometry,
+            symbol: {
+              type: "simple-marker",
+              style: "circle",
+              color: [255, 0, 0, 0.8],
+              size: "20px",
+              outline: { color: "white", width: 2 }
+            }
+          });
+          view.graphics.add(highlight);
+
+          // 6️⃣ Zoom to the feature
+          view.goTo({ target: feature.geometry, zoom: 17 });
+        });
+      });
+
+    });
+  </script>
+</body>
+</html>
