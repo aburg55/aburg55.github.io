@@ -41,7 +41,7 @@
 
       // 3️⃣ Add your Survey123 FeatureLayer
       const surveyLayer = new FeatureLayer({
-        url: "https://services.arcgis.com/YOUR_ORG_ID/arcgis/rest/services/YOUR_LAYER_NAME/FeatureServer/0"
+        url: "https://services.arcgis.com/1511306445/arcgis/rest/services/YOUR_LAYER_NAME/FeatureServer/0"
       });
       map.add(surveyLayer);
 
@@ -81,3 +81,4 @@
   </script>
 </body>
 </html>
+
