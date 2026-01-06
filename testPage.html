@@ -12,74 +12,85 @@
 <body>
   <div id="viewDiv"></div>
   <script>
-    require([
-      "esri/Map",
-      "esri/views/MapView",
-      "esri/layers/FeatureLayer",
-      "esri/Graphic"
-    ], function(Map, MapView, FeatureLayer, Graphic) {
+require([
+  "esri/Map",
+  "esri/views/MapView",
+  "esri/layers/FeatureLayer",
+  "esri/Graphic"
+], function (Map, MapView, FeatureLayer, Graphic) {
 
-      // 1️⃣ Get the GlobalID from URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const gid = urlParams.get('gid');
-      if (!gid) {
-        alert("No submission ID found in URL.");
+  const params = new URLSearchParams(window.location.search);
+  const gid = params.get("gid");
+
+  if (!gid) {
+    alert("Missing GlobalID in URL");
+    return;
+  }
+
+  const map = new Map({
+    basemap: "streets-navigation-vector"
+  });
+
+  const view = new MapView({
+    container: "viewDiv",
+    map: map
+  });
+
+  const layer = new FeatureLayer({
+    url: "PASTE_YOUR_FEATURE_LAYER_URL_HERE",
+    outFields: ["*"]
+  });
+
+  map.add(layer);
+
+  // 🔑 CRITICAL: wait for layerView
+  view.whenLayerView(layer).then((layerView) => {
+
+    layer.queryFeatures({
+      where: `GlobalID='${gid}'`,   // ⚠️ field name matters
+      returnGeometry: true,
+      outFields: ["*"]
+    }).then((result) => {
+
+      if (!result.features.length) {
+        alert("No feature found for GlobalID: " + gid);
         return;
       }
 
-      // 2️⃣ Create the map
-      const map = new Map({
-        basemap: "topo-vector"
+      const feature = result.features[0];
+
+      // Zoom FIRST
+      view.goTo({
+        target: feature.geometry,
+        zoom: 18
       });
 
-      const view = new MapView({
-        container: "viewDiv",
-        map: map,
-        zoom: 10,
-        center: [-82.5, 39.5] // approximate starting center
-      });
-
-      // 3️⃣ Add your Survey123 FeatureLayer
-      const surveyLayer = new FeatureLayer({
-        url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer"
-      });
-      map.add(surveyLayer);
-
-      // 4️⃣ Query the feature by GlobalID
-      surveyLayer.when(() => {
-        surveyLayer.queryFeatures({
-          where: `globalid='${gid}'`,
-          outFields: ["*"],
-          returnGeometry: true
-        }).then((result) => {
-          if (result.features.length === 0) {
-            alert("Submission not found.");
-            return;
+      // Highlight AFTER zoom
+      const highlightGraphic = new Graphic({
+        geometry: feature.geometry,
+        symbol: {
+          type: "simple-marker",
+          color: [0, 255, 255, 0.9],
+          size: 18,
+          outline: {
+            color: "black",
+            width: 2
           }
-
-          const feature = result.features[0];
-
-          // 5️⃣ Add a highlight graphic
-          const highlight = new Graphic({
-            geometry: feature.geometry,
-            symbol: {
-              type: "simple-marker",
-              style: "circle",
-              color: [255, 0, 0, 0.8],
-              size: "20px",
-              outline: { color: "white", width: 2 }
-            }
-          });
-          view.graphics.add(highlight);
-
-          // 6️⃣ Zoom to the feature
-          view.goTo({ target: feature.geometry, zoom: 17 });
-        });
+        }
       });
+
+      view.graphics.removeAll();
+      view.graphics.add(highlightGraphic);
 
     });
-  </script>
+
+  });
+
+});
+</script>
+
 </body>
 </html>
+
 
 
