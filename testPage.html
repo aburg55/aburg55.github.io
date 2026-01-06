@@ -20,23 +20,35 @@
       box-shadow: 0 2px 12px rgba(0,0,0,0.25);
       font-family: Arial, sans-serif;
       z-index: 99;
+      max-width: 92vw;
+    }
+    #sub {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-top: 6px;
+      word-break: break-word;
     }
   </style>
 </head>
 
 <body>
-  <div id="message">Finalizing your submission…</div>
+  <div id="message">
+    Finalizing your submission…
+    <div id="sub"></div>
+  </div>
   <div id="viewDiv"></div>
 
   <script>
     require([
       "esri/Map",
-      "esri/views/MapView"
-    ], function (Map, MapView) {
+      "esri/views/MapView",
+      "esri/layers/FeatureLayer"
+    ], function (Map, MapView, FeatureLayer) {
 
       const msg = document.getElementById("message");
+      const sub = document.getElementById("sub");
 
-      // Read addr from URL
+      // --- Read addr from URL ---
       const params = new URLSearchParams(window.location.search);
       const addrRaw = params.get("addr");
 
@@ -46,14 +58,21 @@
       }
 
       const address = decodeURIComponent(addrRaw).trim();
-      console.log("Address from URL:", address);
+      sub.textContent = `Address: ${address}`;
 
-      // Create map
+      // --- Create map ---
       const map = new Map({ basemap: "topo-vector" });
       const view = new MapView({ container: "viewDiv", map, zoom: 5 });
 
+      // --- Context layer: your Survey123 points ---
+      const surveyLayer = new FeatureLayer({
+        url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0",
+        outFields: ["*"],
+        opacity: 0.45
+      });
+      map.add(surveyLayer);
+
       async function geocode(singleLine) {
-        // Public ArcGIS World Geocoding endpoint
         const url =
           "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates" +
           `?SingleLine=${encodeURIComponent(singleLine)}` +
@@ -62,31 +81,65 @@
         const res = await fetch(url);
         if (!res.ok) throw new Error("Geocode request failed");
         const data = await res.json();
-
         if (!data.candidates || data.candidates.length === 0) return null;
-        return data.candidates[0]; // has location {x,y}
+        return data.candidates[0]; // { location: {x,y}, attributes... }
+      }
+
+      async function showMostRecentSurveyPoint() {
+        // “Most recent” by highest OBJECTID (works well for hosted layers)
+        const oidField = surveyLayer.objectIdField; // usually "objectid"
+
+        const q = surveyLayer.createQuery();
+        q.where = "1=1";
+        q.returnGeometry = true;
+        q.outFields = [oidField];
+        q.orderByFields = [`${oidField} DESC`];
+        q.num = 1;
+
+        const res = await surveyLayer.queryFeatures(q);
+        if (!res.features || res.features.length === 0) return;
+
+        const feature = res.features[0];
+        if (!feature.geometry) return;
+
+        // Add a standout graphic for the most recent point
+        view.graphics.add({
+          geometry: feature.geometry,
+          symbol: {
+            type: "simple-marker",
+            style: "diamond",
+            size: 20,
+            outline: { width: 2 }
+          }
+        });
+
+        // Optional: also “dim” the layer to only that one most-recent point:
+        // surveyLayer.definitionExpression = `${oidField}=${feature.attributes[oidField]}`;
+
+        sub.textContent += ` | Most recent survey ${oidField}: ${feature.attributes[oidField]}`;
       }
 
       view.when(async () => {
-        msg.innerText = "Locating your address…";
+        msg.firstChild.textContent = "Locating your address…";
 
+        // 1) Geocode + zoom to the entered address
         let candidate = null;
         try {
           candidate = await geocode(address);
         } catch (e) {
           console.error(e);
-          msg.innerText = "✅ Submitted — but the address lookup failed.";
+          msg.firstChild.textContent = "✅ Submitted — but the address lookup failed.";
           return;
         }
 
         if (!candidate || !candidate.location) {
-          msg.innerText = "✅ Submitted — but the address could not be located.";
+          msg.firstChild.textContent = "✅ Submitted — but the address could not be located.";
           return;
         }
 
         const { x, y } = candidate.location;
 
-        // Add marker
+        // Marker for the entered address
         view.graphics.removeAll();
         view.graphics.add({
           geometry: { type: "point", x, y, spatialReference: { wkid: 4326 } },
@@ -98,10 +151,17 @@
           }
         });
 
-        // Zoom
         await view.goTo({ center: [x, y], zoom: 18 });
 
-        msg.innerText = "✅ Thank you! Your submission has been recorded.";
+        // 2) Add + emphasize most recent Survey123 point
+        try {
+          await surveyLayer.when();
+          await showMostRecentSurveyPoint();
+        } catch (e) {
+          console.error("Most recent point query failed:", e);
+        }
+
+        msg.firstChild.textContent = "✅ Thank you! Your submission has been recorded.";
       });
 
     });
