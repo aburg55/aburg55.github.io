@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Submission Received</title>
+  <title>Submission Map</title>
 
   <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/light/main.css" />
   <script src="https://js.arcgis.com/4.28/"></script>
@@ -12,12 +12,13 @@
     #panel {
       position: absolute; top: 10px; left: 10px; right: 10px;
       background: rgba(255,255,255,0.95);
-      padding: 10px 12px; border-radius: 6px;
+      padding: 10px 12px; border-radius: 8px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
       font-family: Arial, sans-serif; z-index: 99; font-size: 13px;
-      max-height: 28vh; overflow: auto;
+      max-height: 26vh; overflow: auto;
     }
     #status { font-weight: 700; margin-bottom: 6px; }
+    #sub { font-size: 12px; opacity: 0.8; margin-top: 4px; }
     code { font-family: Consolas, monospace; font-size: 12px; }
   </style>
 </head>
@@ -25,9 +26,9 @@
 <body>
   <div id="panel">
     <div id="status">Loading…</div>
+    <div id="sub"></div>
     <div><b>gid:</b> <code id="gid"></code></div>
     <div><b>oid:</b> <code id="oid"></code></div>
-    <div><b>where:</b> <code id="where"></code></div>
     <div><b>result:</b> <code id="result"></code></div>
   </div>
 
@@ -41,8 +42,19 @@
     ], function (Map, MapView, FeatureLayer) {
 
       const el = (id) => document.getElementById(id);
-      const status = (t) => { el("status").textContent = t; };
+      const setStatus = (t, subText) => {
+        el("status").textContent = t;
+        el("sub").textContent = subText || "";
+      };
 
+      // ---- URLs ----
+      const SURVEY_LAYER_URL =
+        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
+
+      const REFERENCE_LAYER_URL =
+        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/ArcGIS/rest/services/New_Alignments_N211_and_N223/FeatureServer/0";
+
+      // ---- Read params ----
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
       let oid = params.get("oid");
@@ -50,35 +62,46 @@
       el("gid").textContent = gid ?? "(null)";
       el("oid").textContent = oid ?? "(null)";
 
-      // Clean gid if present
       if (gid) {
         gid = decodeURIComponent(gid).trim()
           .replace(/^{/, "").replace(/}$/, "")
           .replace(/^'+|'+$/g, "");
       }
-
-      // Validate oid if present
       const oidNum = oid ? Number(oid) : null;
 
       const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
 
-      // Your GlobalID field name is lowercase "globalid"
       let whereClause = null;
       if (gid && !looksLikePlaceholder(gid)) {
+        // Your GlobalID field name is lowercase "globalid"
         whereClause = `globalid='${gid}'`;
       } else if (Number.isFinite(oidNum)) {
         whereClause = `objectid=${oidNum}`;
       }
 
-      el("where").textContent = whereClause ?? "(none)";
+      // ---- Map (Aerial + labels) ----
+      // hybrid = World Imagery + Hybrid Reference Layer (labels/roads overlay) :contentReference[oaicite:1]{index=1}
+      const map = new Map({ basemap: "hybrid" });
 
-      const map = new Map({ basemap: "topo-vector" });
-      const view = new MapView({ container: "viewDiv", map, zoom: 5 });
+      const view = new MapView({
+        container: "viewDiv",
+        map,
+        zoom: 4
+      });
 
+      // ---- Reference layer (alignments) ----
+      // Added BEFORE survey layer so survey points are visually on top.
+      const referenceLayer = new FeatureLayer({
+        url: REFERENCE_LAYER_URL,
+        opacity: 0.7
+      });
+      map.add(referenceLayer);
+
+      // ---- Survey layer ----
       const surveyLayer = new FeatureLayer({
-        url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0",
+        url: SURVEY_LAYER_URL,
         outFields: ["*"],
-        opacity: 0.75
+        opacity: 0.85
       });
       map.add(surveyLayer);
 
@@ -89,14 +112,25 @@
 
       async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-      async function findFeature(layer) {
-        if (!whereClause) return null;
+      view.when(async () => {
+        await surveyLayer.when();
+        const layerView = await view.whenLayerView(surveyLayer);
 
+        if (!whereClause) {
+          setStatus(
+            "❌ Missing submission ID",
+            "Open this page via your embedded survey page (survey.html) so it can pass ?gid=..."
+          );
+          el("result").textContent = "no where clause";
+          return;
+        }
+
+        // Retry a few times (very short propagation/race conditions can still happen)
         while (attempt < MAX_ATTEMPTS) {
           attempt++;
-          status(`Finding your submission… (${attempt}/${MAX_ATTEMPTS})`);
+          setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
 
-          const res = await layer.queryFeatures({
+          const res = await surveyLayer.queryFeatures({
             where: whereClause,
             returnGeometry: true,
             outFields: ["*"]
@@ -105,48 +139,26 @@
           el("result").textContent = `features=${res.features?.length ?? 0}`;
 
           if (res.features && res.features.length > 0) {
-            return res.features[0];
+            const feature = res.features[0];
+
+            if (!feature.geometry) {
+              setStatus("✅ Submitted, but no location was saved", "This record has no geometry to zoom to.");
+              return;
+            }
+
+            await view.goTo({ target: feature.geometry, zoom: 18 });
+
+            if (highlightHandle) highlightHandle.remove();
+            highlightHandle = layerView.highlight(feature);
+
+            setStatus("✅ Thank you! We found your submission.", "Zoomed to your exact submitted point.");
+            return;
           }
 
           await sleep(RETRY_DELAY);
         }
 
-        return null;
-      }
-
-      view.when(async () => {
-        await surveyLayer.when();
-        const layerView = await view.whenLayerView(surveyLayer);
-
-        try {
-          if (!whereClause) {
-            status("❌ Missing gid/oid. Open this page via https://aburg55.github.io/survey.html");
-            el("result").textContent = "no where clause";
-            return;
-          }
-
-          const feature = await findFeature(surveyLayer);
-
-          if (!feature) {
-            status("⚠️ Submission not found yet. Please refresh once.");
-            return;
-          }
-
-          if (!feature.geometry) {
-            status("✅ Found your submission, but it has no geometry to zoom to.");
-            return;
-          }
-
-          await view.goTo({ target: feature.geometry, zoom: 18 });
-
-          if (highlightHandle) highlightHandle.remove();
-          highlightHandle = layerView.highlight(feature);
-
-          status("✅ Thank you! Submission found + zoomed + highlighted.");
-        } catch (e) {
-          console.error(e);
-          status("❌ Error querying/zooming. Check console.");
-        }
+        setStatus("⚠️ Not found yet", "Try refresh once.");
       });
 
     });
