@@ -6,91 +6,139 @@
 
   <style>
     html, body { height: 100%; margin: 0; }
-    #status {
-      height: 48px;
-      padding: 10px 12px;
+    #statusBar {
+      height: 52px;
+      padding: 10px 14px;
       font-family: Arial, sans-serif;
-      background: #fff;
-      box-shadow: 0 1px 6px rgba(0,0,0,0.15);
+      background: #ffffff;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.15);
       position: sticky;
       top: 0;
       z-index: 10;
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
-    #formDiv { height: calc(100% - 48px); }
+    #statusLeft { display: flex; flex-direction: column; gap: 2px; }
+    #statusTitle { font-weight: 700; }
+    #statusMsg { font-size: 12px; opacity: 0.8; }
+    #statusPill {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f2f2f2;
+      white-space: nowrap;
+    }
+    #formDiv { height: calc(100% - 52px); }
   </style>
 
   <!-- Survey123 Web App JavaScript API -->
   <script src="https://survey123.arcgis.com/api/jsapi/"></script>
 </head>
-<body>
 
-  <div id="status">Ready.</div>
+<body>
+  <div id="statusBar">
+    <div id="statusLeft">
+      <div id="statusTitle">Ready</div>
+      <div id="statusMsg">Please complete the form and submit.</div>
+    </div>
+    <div id="statusPill">Not submitted</div>
+  </div>
+
   <div id="formDiv"></div>
 
   <script>
-    // Your Survey123 share itemId:
     const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f9e13";
-
-    // Your results/zoom page:
     const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
 
-    const statusEl = document.getElementById("status");
+    const statusTitle = document.getElementById("statusTitle");
+    const statusMsg   = document.getElementById("statusMsg");
+    const statusPill  = document.getElementById("statusPill");
+
+    function setStatus(title, msg, pill) {
+      statusTitle.textContent = title;
+      statusMsg.textContent = msg || "";
+      statusPill.textContent = pill || "";
+    }
 
     const webform = new Survey123WebForm({
       container: document.getElementById("formDiv"),
       itemId: SURVEY_ITEM_ID
     });
 
-    // Optional: shows submission starting
-    webform.setOnFormSubmit(() => {
-      console.log("onFormSubmit fired");
-      statusEl.textContent = "Submitting…";
+    // Optional: live validation feedback (won't block submit, but helps users)
+    // (API supports these events) :contentReference[oaicite:1]{index=1}
+    webform.setOnQuestionValidated((info) => {
+      // info shape can vary; we keep this gentle and non-breaking.
+      // If you want, paste a console.log(info) once and we can make it smarter.
     });
 
-    // Prevent double redirects if the event fires twice
+    webform.setOnFormSubmit(() => {
+      console.log("onFormSubmit fired");
+      setStatus("Submitting…", "Please wait—saving your response.", "Submitting");
+    });
+
+    // Prevent double redirects
     let redirected = false;
 
-    // Fires after successful submission (this is the one we need)
     webform.setOnFormSubmitted((data) => {
       console.log("onFormSubmitted fired. Data:", data);
 
       if (redirected) return;
+
+      // Pull IDs + geometry from the payload shape you saw
+      const feature = data?.surveyFeatureSet?.features?.[0];
+      const attrs = feature?.attributes || {};
+      const geom  = feature?.geometry || null;
+
+      const addRes = data?.result?.[0]?.addResults?.[0] || {};
+
+      const globalId =
+        attrs.globalid || attrs.GlobalID || attrs.GLOBALID ||
+        addRes.globalId || addRes.globalID || addRes.GlobalID;
+
+      const objectId =
+        attrs.objectid || attrs.OBJECTID ||
+        addRes.objectId || addRes.objectID || addRes.objectid;
+
+      console.log("Extracted:", { globalId, objectId, hasGeometry: !!geom });
+
+      // If geometry is missing, give the user a clear message.
+      // (This typically means the location wasn't actually set.)
+      if (!geom) {
+        setStatus(
+          "Submitted — but location missing",
+          "It looks like the point location did not save. Please submit again and make sure you place/select the point on the map question.",
+          "Needs location"
+        );
+        return;
+      }
+
+      setStatus("Submitted!", "Redirecting to your map…", "Redirecting");
+
       redirected = true;
 
-      statusEl.textContent = "Submitted. Redirecting…";
-
-      // 1) Try to read IDs from the feature attributes (most reliable)
-      const attrs = data?.surveyFeatureSet?.features?.[0]?.attributes || {};
-      const globalIdFromAttrs = attrs.globalid || attrs.GlobalID || attrs.GLOBALID;
-      const objectIdFromAttrs = attrs.objectid || attrs.OBJECTID;
-
-      // 2) Fallback: read IDs from the addResults response
-      const addRes = data?.result?.[0]?.addResults?.[0] || {};
-      const globalIdFromAdd = addRes.globalId || addRes.globalID || addRes.GlobalID;
-      const objectIdFromAdd = addRes.objectId || addRes.objectID || addRes.objectid;
-
-      const globalId = globalIdFromAttrs || globalIdFromAdd;
-      const objectId = objectIdFromAttrs || objectIdFromAdd;
-
-      console.log("Extracted IDs:", { globalId, objectId });
-
+      // Prefer GlobalID (best for per-user accuracy)
       if (globalId) {
         window.location.assign(`${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`);
         return;
       }
 
+      // Fallback: OBJECTID
       if (Number.isFinite(Number(objectId))) {
         window.location.assign(`${RESULT_PAGE}?oid=${encodeURIComponent(objectId)}`);
         return;
       }
 
-      redirected = false; // allow retry if we couldn't redirect
-      statusEl.textContent = "Submitted, but no ID returned (see Console).";
-      alert("Submitted, but could not extract globalId/objectId. Open Console and expand data.surveyFeatureSet.features[0].attributes and data.result[0].addResults[0].");
+      // If we can't redirect, allow another attempt
+      redirected = false;
+      setStatus(
+        "Submitted — but missing ID",
+        "The form submitted, but no ID was returned to the embed page. Open the console and share the logged data object.",
+        "Error"
+      );
     });
   </script>
-
 </body>
 </html>
