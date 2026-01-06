@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Submission Map</title>
 
   <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/light/main.css" />
@@ -9,30 +10,49 @@
 
   <style>
     html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
-    #panel {
-      position: absolute; top: 10px; left: 10px; right: 10px;
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
+    /* Bottom sheet */
+    #sheet {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      z-index: 9999;
       background: rgba(255,255,255,0.95);
-      padding: 10px 12px; border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      font-family: Arial, sans-serif; z-index: 99; font-size: 13px;
-      max-height: 26vh; overflow: auto;
+      border-radius: 16px;
+      padding: 12px 14px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+      backdrop-filter: blur(8px);
     }
-    #status { font-weight: 700; margin-bottom: 6px; }
-    #sub { font-size: 12px; opacity: 0.8; margin-top: 4px; }
-    code { font-family: Consolas, monospace; font-size: 12px; }
+    #title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+    #msg { font-size: 13px; opacity: 0.85; margin-bottom: 10px; }
+    #actions { display: flex; gap: 10px; }
+    .btn {
+      flex: 1;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 10px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btnPrimary { background: #1a73e8; color: #fff; }
+    .btnSecondary { background: #f2f2f2; color: #111; }
   </style>
 </head>
 
 <body>
-  <div id="panel">
-    <div id="status">Loading…</div>
-    <div id="sub"></div>
-    <div><b>gid:</b> <code id="gid"></code></div>
-    <div><b>oid:</b> <code id="oid"></code></div>
-    <div><b>result:</b> <code id="result"></code></div>
-  </div>
-
   <div id="viewDiv"></div>
+
+  <div id="sheet">
+    <div id="title">Loading…</div>
+    <div id="msg">Please wait.</div>
+    <div id="actions">
+      <button id="openMaps" class="btn btnPrimary" disabled>Open in Maps</button>
+      <button id="refresh" class="btn btnSecondary">Refresh</button>
+    </div>
+  </div>
 
   <script>
     require([
@@ -41,11 +61,17 @@
       "esri/layers/FeatureLayer"
     ], function (Map, MapView, FeatureLayer) {
 
-      const el = (id) => document.getElementById(id);
-      const setStatus = (t, subText) => {
-        el("status").textContent = t;
-        el("sub").textContent = subText || "";
-      };
+      const titleEl = document.getElementById("title");
+      const msgEl = document.getElementById("msg");
+      const openMapsBtn = document.getElementById("openMaps");
+      const refreshBtn = document.getElementById("refresh");
+
+      function setStatus(title, msg) {
+        titleEl.textContent = title || "";
+        msgEl.textContent = msg || "";
+      }
+
+      refreshBtn.addEventListener("click", () => location.reload());
 
       // ---- URLs ----
       const SURVEY_LAYER_URL =
@@ -59,9 +85,6 @@
       let gid = params.get("gid");
       let oid = params.get("oid");
 
-      el("gid").textContent = gid ?? "(null)";
-      el("oid").textContent = oid ?? "(null)";
-
       if (gid) {
         gid = decodeURIComponent(gid).trim()
           .replace(/^{/, "").replace(/}$/, "")
@@ -73,14 +96,12 @@
 
       let whereClause = null;
       if (gid && !looksLikePlaceholder(gid)) {
-        // Your GlobalID field name is lowercase "globalid"
         whereClause = `globalid='${gid}'`;
       } else if (Number.isFinite(oidNum)) {
         whereClause = `objectid=${oidNum}`;
       }
 
-      // ---- Map (Aerial + labels) ----
-      // hybrid = World Imagery + Hybrid Reference Layer (labels/roads overlay) :contentReference[oaicite:1]{index=1}
+      // ---- Map (aerial + labels) ----
       const map = new Map({ basemap: "hybrid" });
 
       const view = new MapView({
@@ -89,19 +110,17 @@
         zoom: 4
       });
 
-      // ---- Reference layer (alignments) ----
-      // Added BEFORE survey layer so survey points are visually on top.
-      const referenceLayer = new FeatureLayer({
+      // Reference layer (alignments)
+      map.add(new FeatureLayer({
         url: REFERENCE_LAYER_URL,
         opacity: 0.7
-      });
-      map.add(referenceLayer);
+      }));
 
-      // ---- Survey layer ----
+      // Survey layer
       const surveyLayer = new FeatureLayer({
         url: SURVEY_LAYER_URL,
         outFields: ["*"],
-        opacity: 0.85
+        opacity: 0.9
       });
       map.add(surveyLayer);
 
@@ -109,23 +128,42 @@
       const RETRY_DELAY = 700;
       let attempt = 0;
       let highlightHandle = null;
+      let lastPoint = null; // save for Open in Maps
 
-      async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+      function enableOpenInMaps(point) {
+        // point is {x,y} in Web Mercator usually; we’ll build a simple Google Maps query
+        // If your layer is WGS84, it still works; Google accepts lat/long.
+        // For maximum correctness, we’ll only enable if it looks like lat/long or we can infer.
+        lastPoint = point;
+        openMapsBtn.disabled = false;
+
+        openMapsBtn.onclick = () => {
+          // If point is in degrees (|x|<=180 and |y|<=90), treat as lon/lat
+          const isLonLat = Math.abs(point.x) <= 180 && Math.abs(point.y) <= 90;
+
+          let url;
+          if (isLonLat) {
+            url = `https://www.google.com/maps?q=${point.y},${point.x}`;
+          } else {
+            // If it's Web Mercator meters, best simple fallback is open Google Maps search by "x,y"
+            // (We could project properly, but keeping this lightweight for mobile.)
+            url = `https://www.google.com/maps/search/?api=1&query=${point.y},${point.x}`;
+          }
+          window.open(url, "_blank");
+        };
+      }
 
       view.when(async () => {
-        await surveyLayer.when();
-        const layerView = await view.whenLayerView(surveyLayer);
-
         if (!whereClause) {
-          setStatus(
-            "❌ Missing submission ID",
-            "Open this page via your embedded survey page (survey.html) so it can pass ?gid=..."
-          );
-          el("result").textContent = "no where clause";
+          setStatus("Missing submission ID", "Please open this from the survey link (QR code).");
           return;
         }
 
-        // Retry a few times (very short propagation/race conditions can still happen)
+        await surveyLayer.when();
+        const layerView = await view.whenLayerView(surveyLayer);
+
         while (attempt < MAX_ATTEMPTS) {
           attempt++;
           setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
@@ -136,13 +174,11 @@
             outFields: ["*"]
           });
 
-          el("result").textContent = `features=${res.features?.length ?? 0}`;
-
           if (res.features && res.features.length > 0) {
             const feature = res.features[0];
 
             if (!feature.geometry) {
-              setStatus("✅ Submitted, but no location was saved", "This record has no geometry to zoom to.");
+              setStatus("Submitted, but no location saved", "This record has no geometry to zoom to.");
               return;
             }
 
@@ -151,14 +187,19 @@
             if (highlightHandle) highlightHandle.remove();
             highlightHandle = layerView.highlight(feature);
 
-            setStatus("✅ Thank you! We found your submission.", "Zoomed to your exact submitted point.");
+            // Save point for maps button
+            if (feature.geometry.type === "point") {
+              enableOpenInMaps(feature.geometry);
+            }
+
+            setStatus("Success", "Zoomed to your submitted point.");
             return;
           }
 
           await sleep(RETRY_DELAY);
         }
 
-        setStatus("⚠️ Not found yet", "Try refresh once.");
+        setStatus("Still processing", "If you just submitted, tap Refresh once.");
       });
 
     });
