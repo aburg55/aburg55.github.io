@@ -9,132 +9,99 @@
 
   <style>
     html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
-    #panel {
-      position: absolute; top: 10px; left: 10px; right: 10px;
+    #message {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
       background: rgba(255,255,255,0.95);
-      padding: 10px 12px; border-radius: 6px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      font-family: Arial, sans-serif; z-index: 99; font-size: 13px;
-      max-height: 38vh; overflow: auto;
+      padding: 12px 18px;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      font-family: Arial, sans-serif;
+      z-index: 99;
     }
-    #status { font-weight: 700; margin-bottom: 6px; }
-    code { font-family: Consolas, monospace; font-size: 12px; }
   </style>
 </head>
 
 <body>
-  <div id="panel">
-    <div id="status">Loading…</div>
-    <div><b>URL:</b> <code id="url"></code></div>
-    <div><b>gid (raw):</b> <code id="gidRaw"></code></div>
-    <div><b>gid (clean):</b> <code id="gidClean"></code></div>
-    <div><b>Query result:</b> <code id="resultInfo"></code></div>
-    <div><b>Geometry:</b> <code id="geomInfo"></code></div>
-  </div>
+  <div id="message">Finalizing your submission…</div>
   <div id="viewDiv"></div>
 
   <script>
     require([
       "esri/Map",
-      "esri/views/MapView",
-      "esri/layers/FeatureLayer"
-    ], function (Map, MapView, FeatureLayer) {
+      "esri/views/MapView"
+    ], function (Map, MapView) {
 
-      const el = (id) => document.getElementById(id);
-      el("url").textContent = window.location.href;
+      const msg = document.getElementById("message");
 
+      // Read addr from URL
       const params = new URLSearchParams(window.location.search);
-      const gidRaw = params.get("gid");
-      el("gidRaw").textContent = gidRaw ?? "(null)";
+      const addrRaw = params.get("addr");
 
-      if (!gidRaw) {
-        el("status").textContent = "❌ Missing ?gid=… in the URL (redirect not passing it).";
-        el("gidClean").textContent = "(n/a)";
+      if (!addrRaw) {
+        msg.innerText = "✅ Submitted — but no address was provided in the redirect URL.";
         return;
       }
 
-      let gid = decodeURIComponent(gidRaw).trim()
-        .replace(/^{/, "").replace(/}$/, "")
-        .replace(/^'+|'+$/g, "");
-      el("gidClean").textContent = gid;
+      const address = decodeURIComponent(addrRaw).trim();
+      console.log("Address from URL:", address);
 
+      // Create map
       const map = new Map({ basemap: "topo-vector" });
       const view = new MapView({ container: "viewDiv", map, zoom: 5 });
 
-      const surveyLayer = new FeatureLayer({
-        url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0",
-        outFields: ["*"]
-      });
-      map.add(surveyLayer);
+      async function geocode(singleLine) {
+        // Public ArcGIS World Geocoding endpoint
+        const url =
+          "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates" +
+          `?SingleLine=${encodeURIComponent(singleLine)}` +
+          "&f=pjson&outFields=Match_addr,Addr_type&maxLocations=1";
 
-      const MAX_ATTEMPTS = 8;
-      const RETRY_DELAY = 600;
-      let attempt = 0;
-      let highlightHandle = null;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Geocode request failed");
+        const data = await res.json();
 
-      function queryOnce(layer) {
-        attempt++;
-        el("status").textContent = `Searching for your submission… (attempt ${attempt}/${MAX_ATTEMPTS})`;
-
-        return layer.queryFeatures({
-          // IMPORTANT: your field name is lowercase "globalid"
-          where: `globalid='${gid}'`,
-          returnGeometry: true,
-          outFields: ["*"]
-        });
+        if (!data.candidates || data.candidates.length === 0) return null;
+        return data.candidates[0]; // has location {x,y}
       }
 
       view.when(async () => {
-        const layerView = await view.whenLayerView(surveyLayer);
+        msg.innerText = "Locating your address…";
 
-        while (attempt < MAX_ATTEMPTS) {
-          try {
-            const result = await queryOnce(surveyLayer);
-
-            el("resultInfo").textContent = `features=${result.features.length}`;
-
-            if (result.features.length === 0) {
-              await new Promise(r => setTimeout(r, RETRY_DELAY));
-              continue;
-            }
-
-            const feature = result.features[0];
-
-            const hasGeom = !!feature.geometry;
-            el("geomInfo").textContent = hasGeom
-              ? `type=${feature.geometry.type}, wkid=${feature.geometry.spatialReference?.wkid ?? "?"}`
-              : "NULL (no point saved)";
-
-            if (!hasGeom) {
-              el("status").textContent = "✅ Found your record, but it has no geometry to zoom to.";
-              return;
-            }
-
-            // Zoom (with error reporting)
-            try {
-              await view.goTo({ target: feature.geometry, zoom: 18 });
-            } catch (e) {
-              console.error("goTo failed:", e);
-              el("status").textContent = "❌ goTo() failed (see console).";
-              return;
-            }
-
-            // Highlight
-            if (highlightHandle) highlightHandle.remove();
-            highlightHandle = layerView.highlight(feature);
-
-            el("status").textContent = "✅ Thank you! Submission found + zoomed + highlighted.";
-            return;
-
-          } catch (err) {
-            console.error("Query error:", err);
-            el("status").textContent = "❌ Query error (see console).";
-            el("resultInfo").textContent = "error";
-            return;
-          }
+        let candidate = null;
+        try {
+          candidate = await geocode(address);
+        } catch (e) {
+          console.error(e);
+          msg.innerText = "✅ Submitted — but the address lookup failed.";
+          return;
         }
 
-        el("status").textContent = "⚠️ Not found after retries. Try refresh once.";
+        if (!candidate || !candidate.location) {
+          msg.innerText = "✅ Submitted — but the address could not be located.";
+          return;
+        }
+
+        const { x, y } = candidate.location;
+
+        // Add marker
+        view.graphics.removeAll();
+        view.graphics.add({
+          geometry: { type: "point", x, y, spatialReference: { wkid: 4326 } },
+          symbol: {
+            type: "simple-marker",
+            style: "circle",
+            size: 18,
+            outline: { width: 2 }
+          }
+        });
+
+        // Zoom
+        await view.goTo({ center: [x, y], zoom: 18 });
+
+        msg.innerText = "✅ Thank you! Your submission has been recorded.";
       });
 
     });
