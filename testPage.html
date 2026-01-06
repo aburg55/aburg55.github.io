@@ -111,10 +111,22 @@
       });
 
       // Reference layer (alignments)
-      map.add(new FeatureLayer({
-        url: REFERENCE_LAYER_URL,
-        opacity: 0.7
-      }));
+     const referenceLayer = new FeatureLayer({
+  url: REFERENCE_LAYER_URL,
+  opacity: 0.9
+});
+
+// Override symbology client-side
+referenceLayer.renderer = {
+  type: "simple",
+  symbol: {
+    type: "simple-line",
+    color: [255, 0, 0, 1],   // red (RGBA)
+    width: 3                // points (try 2–6 for mobile)
+  }
+};
+
+map.add(referenceLayer);
 
       // Survey layer
       const surveyLayer = new FeatureLayer({
@@ -206,3 +218,4 @@
   </script>
 </body>
 </html>
+
