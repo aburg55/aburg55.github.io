@@ -9,18 +9,10 @@
   <script src="https://js.arcgis.com/4.28/"></script>
 
   <style>
-    html, body, #viewDiv {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
+    html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
 
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: #ffffff;
-    }
-
-    /* Bottom information sheet */
+    /* Bottom sheet */
     #sheet {
       position: fixed;
       left: 12px;
@@ -29,55 +21,46 @@
       z-index: 9999;
       background: rgba(255,255,255,0.95);
       border-radius: 16px;
-      padding: 14px;
+      padding: 12px 14px;
       box-shadow: 0 10px 24px rgba(0,0,0,0.25);
       backdrop-filter: blur(8px);
     }
 
-    #title {
-      font-weight: 800;
-      font-size: 16px;
-      margin-bottom: 6px;
-    }
+    #title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+    #msg { font-size: 13px; opacity: 0.85; margin-bottom: 10px; }
 
-    #msg {
-      font-size: 14px;
-      opacity: 0.9;
-      margin-bottom: 12px;
-    }
-
-    /* All buttons full width and blue */
     #actions {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
 
     .btn {
       border: 0;
       border-radius: 12px;
-      padding: 14px 10px;
+      padding: 12px 10px;
       font-weight: 700;
-      font-size: 15px;
+      font-size: 14px;
       cursor: pointer;
-      background: #1a73e8;
-      color: #ffffff;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
     }
+
+    .btnPrimary { background: #1a73e8; color: #fff; }
+    .btnSecondary { background: #f2f2f2; color: #111; }
+
+    #zoomConnector { grid-column: 1 / -1; }
   </style>
 </head>
 
 <body>
-
   <div id="viewDiv"></div>
 
   <div id="sheet">
     <div id="title">Loading…</div>
-    <div id="msg">Please wait while we locate your address.</div>
-
+    <div id="msg">Please wait.</div>
     <div id="actions">
-      <button id="zoomConnector" class="btn">View Extents of Connector Roadway</button>
-      <button id="refresh" class="btn">Refresh</button>
+      <button id="openMaps" class="btn btnPrimary" disabled>Open in Maps</button>
+      <button id="refresh" class="btn btnSecondary">Refresh</button>
+      <button id="zoomConnector" class="btn btnSecondary">View Extents of Connector Roadway</button>
     </div>
   </div>
 
@@ -90,8 +73,9 @@
 
       const titleEl = document.getElementById("title");
       const msgEl = document.getElementById("msg");
-      const zoomConnectorBtn = document.getElementById("zoomConnector");
+      const openMapsBtn = document.getElementById("openMaps");
       const refreshBtn = document.getElementById("refresh");
+      const zoomConnectorBtn = document.getElementById("zoomConnector");
 
       function setStatus(title, msg) {
         titleEl.textContent = title || "";
@@ -101,34 +85,54 @@
       refreshBtn.addEventListener("click", () => location.reload());
 
       const SURVEY_LAYER_URL =
-        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f274f9e13/FeatureServer/0";
+        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
       const REFERENCE_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/ArcGIS/rest/services/New_Alignments_N211_and_N223/FeatureServer/0";
 
       const params = new URLSearchParams(window.location.search);
-      let addr = params.get("addr");
+      let gid = params.get("gid");
+      let oid = params.get("oid");
+
+      if (gid) {
+        gid = decodeURIComponent(gid).trim()
+          .replace(/^{/, "").replace(/}$/, "")
+          .replace(/^'+|'+$/g, "");
+      }
+
+      const oidNum = oid ? Number(oid) : null;
+
+      const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
+
+      let whereClause = null;
+
+      if (gid && !looksLikePlaceholder(gid)) {
+        whereClause = `globalid='${gid}'`;
+      } else if (Number.isFinite(oidNum)) {
+        whereClause = `objectid=${oidNum}`;
+      }
 
       const map = new Map({ basemap: "hybrid" });
 
       const view = new MapView({
         container: "viewDiv",
-        map: map,
+        map,
         zoom: 4
       });
 
       const referenceLayer = new FeatureLayer({
         url: REFERENCE_LAYER_URL,
-        opacity: 0.4,
-        renderer: {
-          type: "simple",
-          symbol: {
-            type: "simple-line",
-            color: [255, 0, 0, 1],
-            width: 3
-          }
-        }
+        opacity: 0.4
       });
+
+      referenceLayer.renderer = {
+        type: "simple",
+        symbol: {
+          type: "simple-line",
+          color: [255, 0, 0, 1],
+          width: 3
+        }
+      };
 
       map.add(referenceLayer);
 
@@ -150,12 +154,13 @@
           if (!ext) {
             const q = referenceLayer.createQuery();
             q.where = "1=1";
+            q.returnGeometry = false;
             const extRes = await referenceLayer.queryExtent(q);
             ext = extRes?.extent || null;
           }
 
           if (!ext) {
-            setStatus("Error", "Could not determine layer extents.");
+            setStatus("Connector roadway", "Could not determine layer extents.");
             return;
           }
 
@@ -170,49 +175,64 @@
       zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
 
       view.when(async () => {
-        if (!addr) {
-          setStatus("Address missing", "This page must be opened from the Survey123 submit screen.");
+        if (!whereClause) {
+          setStatus("Error", "No valid GlobalID or OBJECTID was passed.");
           return;
         }
 
-        addr = decodeURIComponent(addr).trim();
+        await surveyLayer.when();
+        const layerView = await view.whenLayerView(surveyLayer);
 
-        setStatus("Locating address…", addr);
+        setStatus("Finding your record…", "");
 
-        const geocodeUrl =
-          "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates" +
-          `?SingleLine=${encodeURIComponent(addr)}` +
-          "&f=pjson&maxLocations=1";
+        const res = await surveyLayer.queryFeatures({
+          where: whereClause,
+          returnGeometry: true,
+          outFields: ["*"]
+        });
 
-        const res = await fetch(geocodeUrl);
-        const data = await res.json();
-
-        if (!data.candidates || data.candidates.length === 0) {
-          setStatus("Address not found", "The address you entered does not exist. Please try again.");
+        if (!res.features || res.features.length === 0) {
+          setStatus("Address not found", "The submitted address could not be located in the dataset.");
           return;
         }
 
-        const { x, y } = data.candidates[0].location;
+        const feature = res.features[0];
+
+        if (feature.geometry.type !== "point") {
+          setStatus("Error", "Submission geometry is not a point.");
+          return;
+        }
+
+        await view.goTo({ target: feature.geometry, zoom: 18 });
 
         view.graphics.removeAll();
 
         view.graphics.add({
-          geometry: { type: "point", x, y, spatialReference: { wkid: 4326 } },
+          geometry: feature.geometry,
           symbol: {
             type: "simple-marker",
             style: "star",
-            size: 26,
             color: [255, 230, 0, 1],
-            outline: { color: [0, 0, 0, 1], width: 2 }
+            size: 26,
+            outline: {
+              color: [0, 0, 0, 1],
+              width: 2
+            }
           }
         });
 
-        await view.goTo({ center: [x, y], zoom: 18 });
+        openMapsBtn.disabled = false;
+
+        openMapsBtn.onclick = () => {
+          const { x, y } = feature.geometry;
+          const url = `https://www.google.com/maps?q=${y},${x}`;
+          window.open(url, "_blank");
+        };
+
         setStatus("Thank you!", "Your address was successfully located.");
       });
 
     });
   </script>
-
 </body>
 </html>
