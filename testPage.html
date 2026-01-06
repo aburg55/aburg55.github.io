@@ -27,9 +27,15 @@
     }
     #title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
     #msg { font-size: 13px; opacity: 0.85; margin-bottom: 10px; }
-    #actions { display: flex; gap: 10px; }
+
+    /* Mobile-friendly button layout: 2 columns, roadway button spans both */
+    #actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
     .btn {
-      flex: 1;
       border: 0;
       border-radius: 12px;
       padding: 12px 10px;
@@ -39,6 +45,8 @@
     }
     .btnPrimary { background: #1a73e8; color: #fff; }
     .btnSecondary { background: #f2f2f2; color: #111; }
+
+    #zoomConnector { grid-column: 1 / -1; } /* spans full width */
   </style>
 </head>
 
@@ -49,10 +57,10 @@
     <div id="title">Loading…</div>
     <div id="msg">Please wait.</div>
     <div id="actions">
-  <button id="openMaps" class="btn btnPrimary" disabled>Open in Maps</button>
-  <button id="zoomConnector" class="btn btnSecondary">View Extents of Connector Roadway</button>
-  <button id="refresh" class="btn btnSecondary">Refresh</button>
-</div>
+      <button id="openMaps" class="btn btnPrimary" disabled>Open in Maps</button>
+      <button id="refresh" class="btn btnSecondary">Refresh</button>
+      <button id="zoomConnector" class="btn btnSecondary">View Extents of Connector Roadway</button>
+    </div>
   </div>
 
   <script>
@@ -66,6 +74,7 @@
       const msgEl = document.getElementById("msg");
       const openMapsBtn = document.getElementById("openMaps");
       const refreshBtn = document.getElementById("refresh");
+      const zoomConnectorBtn = document.getElementById("zoomConnector");
 
       function setStatus(title, msg) {
         titleEl.textContent = title || "";
@@ -112,22 +121,22 @@
       });
 
       // Reference layer (alignments)
-     const referenceLayer = new FeatureLayer({
-  url: REFERENCE_LAYER_URL,
-  opacity: 0.9
-});
+      const referenceLayer = new FeatureLayer({
+        url: REFERENCE_LAYER_URL,
+        opacity: 0.9
+      });
 
-// Override symbology client-side
-referenceLayer.renderer = {
-  type: "simple",
-  symbol: {
-    type: "simple-line",
-    color: [255, 0, 0, 1],   // red (RGBA)
-    width: 3                // points (try 2–6 for mobile)
-  }
-};
+      // Override symbology client-side
+      referenceLayer.renderer = {
+        type: "simple",
+        symbol: {
+          type: "simple-line",
+          color: [255, 0, 0, 1], // red
+          width: 3               // thicker stroke
+        }
+      };
 
-map.add(referenceLayer);
+      map.add(referenceLayer);
 
       // Survey layer
       const surveyLayer = new FeatureLayer({
@@ -137,31 +146,58 @@ map.add(referenceLayer);
       });
       map.add(surveyLayer);
 
+      // ---- Zoom to Connector Roadway extents ----
+      async function zoomToReferenceLayerExtent() {
+        try {
+          setStatus("Connector roadway", "Calculating extents…");
+
+          await referenceLayer.when();
+
+          // Prefer fullExtent, fallback to queryExtent
+          let ext = referenceLayer.fullExtent;
+
+          if (!ext) {
+            const q = referenceLayer.createQuery();
+            q.where = "1=1";
+            q.returnGeometry = false;
+            q.outSpatialReference = view.spatialReference;
+
+            const extRes = await referenceLayer.queryExtent(q);
+            ext = extRes && extRes.extent ? extRes.extent : null;
+          }
+
+          if (!ext) {
+            setStatus("Connector roadway", "Could not get extents for this layer.");
+            return;
+          }
+
+          await view.goTo(ext.expand(1.15));
+          setStatus("Connector roadway", "Zoomed to roadway extents.");
+        } catch (e) {
+          console.error("zoomToReferenceLayerExtent failed:", e);
+          setStatus("Error", "Could not zoom to roadway extents.");
+        }
+      }
+
+      zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
+
       const MAX_ATTEMPTS = 14;
       const RETRY_DELAY = 700;
       let attempt = 0;
       let highlightHandle = null;
-      let lastPoint = null; // save for Open in Maps
 
       function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
       function enableOpenInMaps(point) {
-        // point is {x,y} in Web Mercator usually; we’ll build a simple Google Maps query
-        // If your layer is WGS84, it still works; Google accepts lat/long.
-        // For maximum correctness, we’ll only enable if it looks like lat/long or we can infer.
-        lastPoint = point;
         openMapsBtn.disabled = false;
 
         openMapsBtn.onclick = () => {
-          // If point is in degrees (|x|<=180 and |y|<=90), treat as lon/lat
           const isLonLat = Math.abs(point.x) <= 180 && Math.abs(point.y) <= 90;
 
           let url;
           if (isLonLat) {
             url = `https://www.google.com/maps?q=${point.y},${point.x}`;
           } else {
-            // If it's Web Mercator meters, best simple fallback is open Google Maps search by "x,y"
-            // (We could project properly, but keeping this lightweight for mobile.)
             url = `https://www.google.com/maps/search/?api=1&query=${point.y},${point.x}`;
           }
           window.open(url, "_blank");
@@ -200,7 +236,6 @@ map.add(referenceLayer);
             if (highlightHandle) highlightHandle.remove();
             highlightHandle = layerView.highlight(feature);
 
-            // Save point for maps button
             if (feature.geometry.type === "point") {
               enableOpenInMaps(feature.geometry);
             }
@@ -219,5 +254,3 @@ map.add(referenceLayer);
   </script>
 </body>
 </html>
-
-
