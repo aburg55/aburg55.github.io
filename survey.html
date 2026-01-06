@@ -62,8 +62,8 @@
     // Survey123 itemId
     const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f274f9e13";
 
-    // ArcGIS Online result page
-    const RESULT_PAGE = "https://experience.arcgis.com/experience/0af2d044feed4437873c4457984d7298/";
+    // ArcGIS GitHub result page
+const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
 
     // Feature layer that stores submitted points
     const SURVEY_LAYER_URL = "https://services1.arcgis.com/MEvzxYGCHO108ZxL/ArcGIS/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f274f9e13/FeatureServer/0";
@@ -96,25 +96,28 @@
     let redirected = false;
 
     // Triggered after successful submission
-    webform.setOnFormSubmitted(async (data) => {
-      console.log("Submission payload:", data);
+webform.setOnFormSubmitted((data) => {
 
-      if (redirected) return;
+  console.log("onFormSubmitted:", data);
 
-      const feature = data?.surveyFeatureSet?.features?.[0];
-      const attrs = feature?.attributes || {};
-      const geom = feature?.geometry || null;
+  const feature = data?.surveyFeatureSet?.features?.[0];
+  const attrs = feature?.attributes || {};
+  const geom = feature?.geometry || null;
 
-      const address = attrs.enter_your_address_here;
+  // Extract address text from the submitted field
+  const address = attrs.enter_your_address_here;
 
-      if (!geom) {
-        showStatus(
-          "Address not found",
-          "The address you entered could not be located. Please try again with a valid address."
-        );
-        setTimeout(hideStatus, 2000);
-        return;
-      }
+  if (!geom) {
+    alert("Submitted, but the address point could not be located. Please try a different address.");
+    return;
+  }
+
+  // Redirect after a brief moment so user sees confirmation
+  setTimeout(() => {
+    window.location.assign(`${RESULT_PAGE}?addr=${encodeURIComponent(address)}`);
+  }, 1200);
+
+});
 
       redirected = true;
 
