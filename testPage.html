@@ -1,98 +1,113 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Zoom to Survey Submission</title>
-  <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/light/main.css">
+  <meta charset="utf-8" />
+  <title>Survey Submission Received</title>
+
+  <link
+    rel="stylesheet"
+    href="https://js.arcgis.com/4.28/esri/themes/light/main.css"
+  />
   <script src="https://js.arcgis.com/4.28/"></script>
+
   <style>
-    html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
+    html, body, #viewDiv {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    #message {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px 18px;
+      border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 99;
+      font-family: Arial, sans-serif;
+    }
   </style>
 </head>
+
 <body>
+  <div id="message">✅ Thank you! Your submission has been received.</div>
   <div id="viewDiv"></div>
+
   <script>
-require([
-  "esri/Map",
-  "esri/views/MapView",
-  "esri/layers/FeatureLayer",
-  "esri/Graphic"
-], function (Map, MapView, FeatureLayer, Graphic) {
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/layers/FeatureLayer"
+    ], function (Map, MapView, FeatureLayer) {
 
-  const params = new URLSearchParams(window.location.search);
-  const gid = params.get("gid");
+      // 1️⃣ Read GlobalID from URL
+      const params = new URLSearchParams(window.location.search);
+      let gid = params.get("gid");
 
-  if (!gid) {
-    alert("Missing GlobalID in URL");
-    return;
-  }
-
-  const map = new Map({
-    basemap: "streets-navigation-vector"
-  });
-
-  const view = new MapView({
-    container: "viewDiv",
-    map: map
-  });
-
-  const layer = new FeatureLayer({
-    url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0",
-    outFields: ["*"]
-  });
-
-  map.add(layer);
-
-  // 🔑 CRITICAL: wait for layerView
-  view.whenLayerView(layer).then((layerView) => {
-
-    layer.queryFeatures({
-      where: `globalid='${gid}'`,   // ⚠️ field name matters
-      returnGeometry: true,
-      outFields: ["*"]
-    }).then((result) => {
-
-      if (!result.features.length) {
-        alert("No feature found for GlobalID: " + gid);
+      if (!gid) {
+        alert("No submission ID found.");
         return;
       }
 
-      const feature = result.features[0];
+      // Remove braces just in case
+      gid = gid.replace("{", "").replace("}", "");
+      console.log("Zooming to submission:", gid);
 
-      // Zoom FIRST
-      view.goTo({
-        target: feature.geometry,
-        zoom: 18
+      // 2️⃣ Create map
+      const map = new Map({
+        basemap: "topo-vector"
       });
 
-      // Highlight AFTER zoom
-      const highlightGraphic = new Graphic({
-        geometry: feature.geometry,
-        symbol: {
-          type: "simple-marker",
-          color: [0, 255, 255, 0.9],
-          size: 18,
-          outline: {
-            color: "black",
-            width: 2
-          }
-        }
+      const view = new MapView({
+        container: "viewDiv",
+        map: map,
+        zoom: 5
       });
 
-      view.graphics.removeAll();
-      view.graphics.add(highlightGraphic);
+      // 3️⃣ Survey123 Feature Layer (REPLACE WITH YOUR REAL URL)
+      const surveyLayer = new FeatureLayer({
+        url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0",
+        outFields: ["*"]
+      });
 
+      map.add(surveyLayer);
+
+      // 4️⃣ Wait for view + layerView
+      view.when(() => {
+        view.whenLayerView(surveyLayer).then((layerView) => {
+
+          surveyLayer.queryFeatures({
+            where: `globalid='${gid}'`,
+            returnGeometry: true,
+            outFields: ["*"]
+          }).then((result) => {
+
+            if (result.features.length === 0) {
+              alert("Submission not found.");
+              return;
+            }
+
+            const feature = result.features[0];
+
+            // 5️⃣ Zoom to feature
+            view.goTo({
+              target: feature.geometry,
+              zoom: 18
+            });
+
+            // 6️⃣ Highlight feature
+            layerView.highlight(feature);
+
+          }).catch(console.error);
+        });
+      });
     });
-
-  });
-
-});
-</script>
-
+  </script>
 </body>
 </html>
-
-
 
 
 
