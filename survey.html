@@ -3,15 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Website Survey</title>
+  <title>Address Submission Survey</title>
 
   <style>
     html, body { height: 100%; margin: 0; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #fff; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #ffffff;
+    }
 
-    #formDiv { height: 100%; }
+    #formDiv {
+      height: 100%;
+    }
 
-    /* Mobile toast */
+    /* Mobile status banner */
     #toast {
       position: fixed;
       left: 12px;
@@ -19,18 +24,29 @@
       bottom: calc(12px + env(safe-area-inset-bottom));
       z-index: 9999;
       background: rgba(0,0,0,0.85);
-      color: #fff;
+      color: #ffffff;
       padding: 12px 14px;
       border-radius: 14px;
       box-shadow: 0 8px 20px rgba(0,0,0,0.25);
       display: none;
     }
-    #toastTitle { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
-    #toastMsg { font-size: 13px; opacity: 0.9; }
+
+    #toastTitle {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    #toastMsg {
+      font-size: 13px;
+      opacity: 0.9;
+    }
   </style>
 
+  <!-- Survey123 WebForm API -->
   <script src="https://survey123.arcgis.com/api/jsapi/"></script>
 </head>
+
 <body>
 
   <div id="formDiv"></div>
@@ -42,24 +58,22 @@
 
   <script>
     const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f9e13";
+    const EXP_APP_ID = "0af2d044feed4437873c4457984d7298";
+
+    const DATA_SOURCE_ID = "dataSource_1-19b334a5aef-layer-15";
+
     const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
 
     const toast = document.getElementById("toast");
     const toastTitle = document.getElementById("toastTitle");
     const toastMsg = document.getElementById("toastMsg");
 
-    const EXP_APP_ID = "0af2d044feed4437873c4457984d7298";
-const DATA_SOURCE_ID = "dataSource_1-19b334a5aef-layer-15";
-
-function buildExperienceUrl(objectId) {
-  return `https://experience.arcgis.com/experience/${EXP_APP_ID}/#data_s=id:${DATA_SOURCE_ID}:${objectId}&zoom_to_selection=true`;
-}
-
     function showToast(title, msg) {
       toastTitle.textContent = title || "";
       toastMsg.textContent = msg || "";
       toast.style.display = "block";
     }
+
     function hideToast() {
       toast.style.display = "none";
     }
@@ -70,55 +84,47 @@ function buildExperienceUrl(objectId) {
     });
 
     webform.setOnFormSubmit(() => {
-      showToast("Submitting…", "Please wait while we save your response.");
+      showToast("Submitting…", "Please wait while your address is being saved.");
     });
 
     let redirected = false;
 
+    function buildExperienceUrl(objectId) {
+      return `https://experience.arcgis.com/experience/${EXP_APP_ID}/#data_s=id:${DATA_SOURCE_ID}:${objectId}&zoom_to_selection=true`;
+    }
+
     webform.setOnFormSubmitted((data) => {
-      console.log("onFormSubmitted:", data);
+
       if (redirected) return;
 
-      const feature = data?.surveyFeatureSet?.features?.[0];
-      const attrs = feature?.attributes || {};
-      const geom  = feature?.geometry || null;
-      const addRes = data?.result?.[0]?.addResults?.[0] || {};
-
-      const globalId =
-        attrs.globalid || attrs.GlobalID || attrs.GLOBALID ||
-        addRes.globalId || addRes.globalID || addRes.GlobalID;
+      const attrs = data?.surveyFeatureSet?.features?.[0]?.attributes || {};
+      const geom = data?.surveyFeatureSet?.features?.[0]?.geometry || null;
 
       const objectId =
         attrs.objectid || attrs.OBJECTID ||
-        addRes.objectId || addRes.objectID || addRes.objectid;
+        data?.result?.[0]?.addResults?.[0]?.objectId ||
+        data?.result?.[0]?.addResults?.[0]?.objectID ||
+        data?.result?.[0]?.addResults?.[0]?.objectid;
 
       if (!geom) {
-        showToast(
-          "Location missing",
-          "Please submit again and make sure you place/select the point on the map question."
+        showToast("Address location not found",
+          "The address you entered could not be located on the map. Please try a different address."
         );
         return;
       }
 
-      showToast("Submitted!", "Opening your map…");
-      redirected = true;
+      showToast("Submitted!",
+        "Opening map view…"
+      );
 
-      if (globalId) {
-        window.location.assign(`${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`);
-        return;
-      }
-if (Number.isFinite(Number(objectId))) {
-  window.location.assign(buildExperienceUrl(Number(objectId)));
-  return;
-}
+      setTimeout(() => {
+        redirected = true;
+        window.location.assign(buildExperienceUrl(Number(objectId)));
+      }, 1200);
 
-
-      redirected = false;
-      showToast("Submitted, but missing ID", "Please try again. If it continues, contact support.");
     });
-
-    // Optional: hide toast after load
-    setTimeout(hideToast, 1500);
   </script>
+
 </body>
 </html>
+
