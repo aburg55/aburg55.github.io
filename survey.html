@@ -8,29 +8,25 @@
     #formDiv { height: 100%; }
   </style>
 
-  <!-- Survey123 Web App JS API -->
+  <!-- Survey123 Web App JavaScript API -->
   <script src="https://survey123.arcgis.com/api/jsapi/"></script>
 </head>
 <body>
   <div id="formDiv"></div>
 
   <script>
-    // TODO: put your Survey123 itemId here (from the share link)
-    const itemId = "d4f003f5be254f9bb5a8d92a281f9e13";
-
-    // This is your map/thank-you page that zooms to a submission
-    const redirectBase = "https://aburg55.github.io/testPage.html";
+    const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f9e13";
+    const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
 
     const webform = new Survey123WebForm({
       container: document.getElementById("formDiv"),
-      itemId
+      itemId: SURVEY_ITEM_ID
     });
 
     webform.onFormSubmitted = (e) => {
-      // e varies slightly by version; log once to confirm
       console.log("onFormSubmitted event:", e);
 
-      // Try common payload shapes:
+      // Try common payload shapes (varies by version)
       const globalId =
         e?.globalId ||
         e?.result?.globalId ||
@@ -43,19 +39,17 @@
         e?.feature?.attributes?.objectid ||
         e?.feature?.attributes?.OBJECTID;
 
-      // Prefer globalId if available
       if (globalId) {
-        window.location.href = `${redirectBase}?gid=${encodeURIComponent(globalId)}`;
+        window.location.href = `${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`;
         return;
       }
 
-      // Fallback to objectId
       if (objectId) {
-        window.location.href = `${redirectBase}?oid=${encodeURIComponent(objectId)}`;
+        window.location.href = `${RESULT_PAGE}?oid=${encodeURIComponent(objectId)}`;
         return;
       }
 
-      alert("Submitted, but could not read submission id from the form event. Check console log.");
+      alert("Submitted, but could not read globalId/objectId from the submission event. Open DevTools Console to inspect the event payload.");
     };
   </script>
 </body>
