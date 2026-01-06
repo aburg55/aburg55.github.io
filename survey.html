@@ -48,6 +48,13 @@
     const toastTitle = document.getElementById("toastTitle");
     const toastMsg = document.getElementById("toastMsg");
 
+    const EXP_APP_ID = "0af2d044feed4437873c4457984d7298";
+const DATA_SOURCE_ID = "dataSource_1-19b334a5aef-layer-15";
+
+function buildExperienceUrl(objectId) {
+  return `https://experience.arcgis.com/experience/${EXP_APP_ID}/#data_s=id:${DATA_SOURCE_ID}:${objectId}&zoom_to_selection=true`;
+}
+
     function showToast(title, msg) {
       toastTitle.textContent = title || "";
       toastMsg.textContent = msg || "";
@@ -100,10 +107,11 @@
         window.location.assign(`${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`);
         return;
       }
-      if (Number.isFinite(Number(objectId))) {
-        window.location.assign(`${RESULT_PAGE}?oid=${encodeURIComponent(objectId)}`);
-        return;
-      }
+if (Number.isFinite(Number(objectId))) {
+  window.location.assign(buildExperienceUrl(Number(objectId)));
+  return;
+}
+
 
       redirected = false;
       showToast("Submitted, but missing ID", "Please try again. If it continues, contact support.");
