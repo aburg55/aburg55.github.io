@@ -25,10 +25,10 @@
       box-shadow: 0 10px 24px rgba(0,0,0,0.25);
       backdrop-filter: blur(8px);
     }
+
     #title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
     #msg { font-size: 13px; opacity: 0.85; margin-bottom: 10px; }
 
-    /* Mobile-friendly button layout: 2 columns, roadway button spans both */
     #actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -43,10 +43,11 @@
       font-size: 14px;
       cursor: pointer;
     }
+
     .btnPrimary { background: #1a73e8; color: #fff; }
     .btnSecondary { background: #f2f2f2; color: #111; }
 
-    #zoomConnector { grid-column: 1 / -1; } /* spans full width */
+    #zoomConnector { grid-column: 1 / -1; }
   </style>
 </head>
 
@@ -83,14 +84,12 @@
 
       refreshBtn.addEventListener("click", () => location.reload());
 
-      // ---- URLs ----
       const SURVEY_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
       const REFERENCE_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/ArcGIS/rest/services/New_Alignments_N211_and_N223/FeatureServer/0";
 
-      // ---- Read params ----
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
       let oid = params.get("oid");
@@ -100,18 +99,19 @@
           .replace(/^{/, "").replace(/}$/, "")
           .replace(/^'+|'+$/g, "");
       }
+
       const oidNum = oid ? Number(oid) : null;
 
       const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
 
       let whereClause = null;
+
       if (gid && !looksLikePlaceholder(gid)) {
         whereClause = `globalid='${gid}'`;
       } else if (Number.isFinite(oidNum)) {
         whereClause = `objectid=${oidNum}`;
       }
 
-      // ---- Map (aerial + labels) ----
       const map = new Map({ basemap: "hybrid" });
 
       const view = new MapView({
@@ -120,134 +120,116 @@
         zoom: 4
       });
 
-      // Reference layer (alignments)
       const referenceLayer = new FeatureLayer({
         url: REFERENCE_LAYER_URL,
-        opacity: 0.9
+        opacity: 0.4
       });
 
-      // Override symbology client-side
       referenceLayer.renderer = {
         type: "simple",
         symbol: {
           type: "simple-line",
-          color: [255, 0, 0, 1], // red
-          width: 3               // thicker stroke
+          color: [255, 0, 0, 1],
+          width: 3
         }
       };
 
       map.add(referenceLayer);
 
-      // Survey layer
       const surveyLayer = new FeatureLayer({
         url: SURVEY_LAYER_URL,
         outFields: ["*"],
-        opacity: 0.9
+        opacity: 0.4
       });
+
       map.add(surveyLayer);
 
-      // ---- Zoom to Connector Roadway extents ----
       async function zoomToReferenceLayerExtent() {
         try {
           setStatus("Connector roadway", "Calculating extents…");
-
           await referenceLayer.when();
 
-          // Prefer fullExtent, fallback to queryExtent
           let ext = referenceLayer.fullExtent;
 
           if (!ext) {
             const q = referenceLayer.createQuery();
             q.where = "1=1";
             q.returnGeometry = false;
-            q.outSpatialReference = view.spatialReference;
-
             const extRes = await referenceLayer.queryExtent(q);
-            ext = extRes && extRes.extent ? extRes.extent : null;
+            ext = extRes?.extent || null;
           }
 
           if (!ext) {
-            setStatus("Connector roadway", "Could not get extents for this layer.");
+            setStatus("Connector roadway", "Could not determine layer extents.");
             return;
           }
 
           await view.goTo(ext.expand(1.15));
           setStatus("Connector roadway", "Zoomed to roadway extents.");
         } catch (e) {
-          console.error("zoomToReferenceLayerExtent failed:", e);
-          setStatus("Error", "Could not zoom to roadway extents.");
+          console.error(e);
+          setStatus("Error", "Could not zoom to extents.");
         }
       }
 
       zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
 
-      const MAX_ATTEMPTS = 14;
-      const RETRY_DELAY = 700;
-      let attempt = 0;
-      let highlightHandle = null;
-
-      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-      function enableOpenInMaps(point) {
-        openMapsBtn.disabled = false;
-
-        openMapsBtn.onclick = () => {
-          const isLonLat = Math.abs(point.x) <= 180 && Math.abs(point.y) <= 90;
-
-          let url;
-          if (isLonLat) {
-            url = `https://www.google.com/maps?q=${point.y},${point.x}`;
-          } else {
-            url = `https://www.google.com/maps/search/?api=1&query=${point.y},${point.x}`;
-          }
-          window.open(url, "_blank");
-        };
-      }
-
       view.when(async () => {
         if (!whereClause) {
-          setStatus("Missing submission ID", "Please open this from the survey link (QR code).");
+          setStatus("Error", "No valid GlobalID or OBJECTID was passed.");
           return;
         }
 
         await surveyLayer.when();
         const layerView = await view.whenLayerView(surveyLayer);
 
-        while (attempt < MAX_ATTEMPTS) {
-          attempt++;
-          setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
+        setStatus("Finding your record…", "");
 
-          const res = await surveyLayer.queryFeatures({
-            where: whereClause,
-            returnGeometry: true,
-            outFields: ["*"]
-          });
+        const res = await surveyLayer.queryFeatures({
+          where: whereClause,
+          returnGeometry: true,
+          outFields: ["*"]
+        });
 
-          if (res.features && res.features.length > 0) {
-            const feature = res.features[0];
-
-            if (!feature.geometry) {
-              setStatus("Submitted, but no location saved", "This record has no geometry to zoom to.");
-              return;
-            }
-
-            await view.goTo({ target: feature.geometry, zoom: 18 });
-
-            if (highlightHandle) highlightHandle.remove();
-            highlightHandle = layerView.highlight(feature);
-
-            if (feature.geometry.type === "point") {
-              enableOpenInMaps(feature.geometry);
-            }
-
-            setStatus("Success", "Zoomed to your submitted point.");
-            return;
-          }
-
-          await sleep(RETRY_DELAY);
+        if (!res.features || res.features.length === 0) {
+          setStatus("Address not found", "The submitted address could not be located in the dataset.");
+          return;
         }
 
-        setStatus("Still processing", "If you just submitted, tap Refresh once.");
+        const feature = res.features[0];
+
+        if (feature.geometry.type !== "point") {
+          setStatus("Error", "Submission geometry is not a point.");
+          return;
+        }
+
+        await view.goTo({ target: feature.geometry, zoom: 18 });
+
+        view.graphics.removeAll();
+
+        view.graphics.add({
+          geometry: feature.geometry,
+          symbol: {
+            type: "simple-marker",
+            style: "star",
+            color: [255, 230, 0, 1],
+            size: 26,
+            outline: {
+              color: [0, 0, 0, 1],
+              width: 2
+            }
+          }
+        });
+
+        openMapsBtn.disabled = false;
+
+        openMapsBtn.onclick = () => {
+          const { x, y } = feature.geometry;
+          const url = `https://www.google.com/maps?q=${y},${x}`;
+          window.open(url, "_blank");
+        };
+
+        setStatus("Thank you!", "Your address was successfully located.");
       });
 
     });
