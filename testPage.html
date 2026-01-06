@@ -72,19 +72,19 @@
       });
       map.add(surveyLayer);
 
-      async function geocode(singleLine) {
-        const url =
-          "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates" +
-          `?SingleLine=${encodeURIComponent(singleLine)}` +
-          "&f=pjson&outFields=Match_addr,Addr_type&maxLocations=1";
+      async function geocode(singleLine, outWkid) {
+  const url =
+    "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates" +
+    `?SingleLine=${encodeURIComponent(singleLine)}` +
+    "&f=pjson&maxLocations=1" +
+    `&outSR=${outWkid}`;
 
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Geocode request failed");
-        const data = await res.json();
-        if (!data.candidates || data.candidates.length === 0) return null;
-        return data.candidates[0]; // { location: {x,y}, attributes... }
-      }
-
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Geocode request failed");
+  const data = await res.json();
+  if (!data.candidates || data.candidates.length === 0) return null;
+  return data.candidates[0];
+}
       async function showMostRecentSurveyPoint() {
         // “Most recent” by highest OBJECTID (works well for hosted layers)
         const oidField = surveyLayer.objectIdField; // usually "objectid"
@@ -137,21 +137,37 @@
           return;
         }
 
-        const { x, y } = candidate.location;
+const outWkid = view.spatialReference.wkid; // usually 102100 / 3857
 
-        // Marker for the entered address
-        view.graphics.removeAll();
-        view.graphics.add({
-          geometry: { type: "point", x, y, spatialReference: { wkid: 4326 } },
-          symbol: {
-            type: "simple-marker",
-            style: "circle",
-            size: 18,
-            outline: { width: 2 }
-          }
-        });
+candidate = await geocode(address, outWkid);
 
-        await view.goTo({ center: [x, y], zoom: 18 });
+if (!candidate || !candidate.location) {
+  msg.firstChild.textContent = "✅ Submitted — but the address could not be located.";
+  return;
+}
+
+const pt = {
+  type: "point",
+  x: candidate.location.x,
+  y: candidate.location.y,
+  spatialReference: { wkid: outWkid }
+};
+
+// Marker for the entered address
+view.graphics.removeAll();
+view.graphics.add({
+  geometry: pt,
+  symbol: {
+    type: "simple-marker",
+    style: "circle",
+    size: 18,
+    outline: { width: 2 }
+  }
+});
+
+// Zoom (target geometry is more reliable than center array)
+await view.goTo({ target: pt, zoom: 18 });
+
 
         // 2) Add + emphasize most recent Survey123 point
         try {
@@ -168,3 +184,4 @@
   </script>
 </body>
 </html>
+
