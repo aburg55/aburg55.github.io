@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Survey Submission Received</title>
+  <title>Submission Received</title>
 
   <link
     rel="stylesheet"
@@ -23,17 +23,17 @@
       left: 50%;
       transform: translateX(-50%);
       background: white;
-      padding: 10px 18px;
+      padding: 12px 20px;
       border-radius: 6px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      z-index: 99;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
       font-family: Arial, sans-serif;
+      z-index: 99;
     }
   </style>
 </head>
 
 <body>
-  <div id="message">✅ Thank you! Your submission has been received.</div>
+  <div id="message">Finalizing your submission…</div>
   <div id="viewDiv"></div>
 
   <script>
@@ -43,20 +43,25 @@
       "esri/layers/FeatureLayer"
     ], function (Map, MapView, FeatureLayer) {
 
-      // 1️⃣ Read GlobalID from URL
+      // --------------------------------------------------
+      // 1️⃣ Get GlobalID from URL
+      // --------------------------------------------------
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
 
       if (!gid) {
-        alert("No submission ID found.");
+        document.getElementById("message").innerText =
+          "Submission ID not found.";
         return;
       }
 
-      // Remove braces just in case
+      // Clean braces if present
       gid = gid.replace("{", "").replace("}", "");
-      console.log("Zooming to submission:", gid);
+      console.log("Looking for GlobalID:", gid);
 
-      // 2️⃣ Create map
+      // --------------------------------------------------
+      // 2️⃣ Create map + view
+      // --------------------------------------------------
       const map = new Map({
         basemap: "topo-vector"
       });
@@ -67,7 +72,9 @@
         zoom: 5
       });
 
-      // 3️⃣ Survey123 Feature Layer (REPLACE WITH YOUR REAL URL)
+      // --------------------------------------------------
+      // 3️⃣ MAIN Survey123 Feature Layer (REQUIRED)
+      // --------------------------------------------------
       const surveyLayer = new FeatureLayer({
         url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0",
         outFields: ["*"]
@@ -75,50 +82,70 @@
 
       map.add(surveyLayer);
 
+      // --------------------------------------------------
+      // 4️⃣ OPTIONAL Context Layer (parcels, roads, etc.)
+      // --------------------------------------------------
       const contextLayer = new FeatureLayer({
-  url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/New_Alignments_N211_and_N223/FeatureServer/0",
-  outFields: ["*"],
-});
+        url: "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/New_Alignments_N211_and_N223/FeatureServer/0",
+        opacity: 0.4
+      });
 
-map.add(contextLayer);
+      map.add(contextLayer);
 
+      // --------------------------------------------------
+      // 5️⃣ Retry / Polling Logic (CRITICAL)
+      // --------------------------------------------------
+      const MAX_ATTEMPTS = 10;
+      const RETRY_DELAY = 800;
+      let attempt = 0;
 
-      // 4️⃣ Wait for view + layerView
-      view.when(() => {
-        view.whenLayerView(surveyLayer).then((layerView) => {
+      function queryUntilFound(layer, layerView) {
+        attempt++;
 
-          surveyLayer.queryFeatures({
-            where: `globalid='${gid}'`,
-            returnGeometry: true,
-            outFields: ["*"]
-          }).then((result) => {
+        layer.queryFeatures({
+          where: `globalid='${gid}'`,
+          returnGeometry: true,
+          outFields: ["*"]
+        }).then((result) => {
 
-            if (result.features.length === 0) {
-              alert("Submission not found.");
-              return;
-            }
-
+          if (result.features.length > 0) {
             const feature = result.features[0];
 
-            // 5️⃣ Zoom to feature
             view.goTo({
               target: feature.geometry,
               zoom: 18
             });
 
-            // 6️⃣ Highlight feature
             layerView.highlight(feature);
 
-          }).catch(console.error);
+            document.getElementById("message").innerText =
+              "✅ Thank you! Your submission has been recorded.";
+
+            console.log("Feature found on attempt", attempt);
+            return;
+          }
+
+          if (attempt < MAX_ATTEMPTS) {
+            console.log("Not found yet — retrying", attempt);
+            setTimeout(() => queryUntilFound(layer, layerView), RETRY_DELAY);
+          } else {
+            document.getElementById("message").innerText =
+              "Your submission is still processing. Please refresh shortly.";
+          }
+
+        }).catch(console.error);
+      }
+
+      // --------------------------------------------------
+      // 6️⃣ Start once layerView is ready
+      // --------------------------------------------------
+      view.when(() => {
+        view.whenLayerView(surveyLayer).then((layerView) => {
+          queryUntilFound(surveyLayer, layerView);
         });
       });
+
     });
   </script>
 </body>
 </html>
-
-
-
-
-
-
