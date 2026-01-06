@@ -2,64 +2,59 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Website Survey</title>
 
   <style>
     html, body { height: 100%; margin: 0; }
-    #statusBar {
-      height: 52px;
-      padding: 10px 14px;
-      font-family: Arial, sans-serif;
-      background: #ffffff;
-      box-shadow: 0 1px 8px rgba(0,0,0,0.15);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #fff; }
+
+    #formDiv { height: 100%; }
+
+    /* Mobile toast */
+    #toast {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      z-index: 9999;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 14px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      display: none;
     }
-    #statusLeft { display: flex; flex-direction: column; gap: 2px; }
-    #statusTitle { font-weight: 700; }
-    #statusMsg { font-size: 12px; opacity: 0.8; }
-    #statusPill {
-      font-size: 12px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #f2f2f2;
-      white-space: nowrap;
-    }
-    #formDiv { height: calc(100% - 52px); }
+    #toastTitle { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+    #toastMsg { font-size: 13px; opacity: 0.9; }
   </style>
 
-  <!-- Survey123 Web App JavaScript API -->
   <script src="https://survey123.arcgis.com/api/jsapi/"></script>
 </head>
-
 <body>
-  <div id="statusBar">
-    <div id="statusLeft">
-      <div id="statusTitle">Ready</div>
-      <div id="statusMsg">Please complete the form and submit.</div>
-    </div>
-    <div id="statusPill">Not submitted</div>
-  </div>
 
   <div id="formDiv"></div>
+
+  <div id="toast">
+    <div id="toastTitle"></div>
+    <div id="toastMsg"></div>
+  </div>
 
   <script>
     const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f9e13";
     const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
 
-    const statusTitle = document.getElementById("statusTitle");
-    const statusMsg   = document.getElementById("statusMsg");
-    const statusPill  = document.getElementById("statusPill");
+    const toast = document.getElementById("toast");
+    const toastTitle = document.getElementById("toastTitle");
+    const toastMsg = document.getElementById("toastMsg");
 
-    function setStatus(title, msg, pill) {
-      statusTitle.textContent = title;
-      statusMsg.textContent = msg || "";
-      statusPill.textContent = pill || "";
+    function showToast(title, msg) {
+      toastTitle.textContent = title || "";
+      toastMsg.textContent = msg || "";
+      toast.style.display = "block";
+    }
+    function hideToast() {
+      toast.style.display = "none";
     }
 
     const webform = new Survey123WebForm({
@@ -67,31 +62,19 @@
       itemId: SURVEY_ITEM_ID
     });
 
-    // Optional: live validation feedback (won't block submit, but helps users)
-    // (API supports these events) :contentReference[oaicite:1]{index=1}
-    webform.setOnQuestionValidated((info) => {
-      // info shape can vary; we keep this gentle and non-breaking.
-      // If you want, paste a console.log(info) once and we can make it smarter.
-    });
-
     webform.setOnFormSubmit(() => {
-      console.log("onFormSubmit fired");
-      setStatus("Submitting…", "Please wait—saving your response.", "Submitting");
+      showToast("Submitting…", "Please wait while we save your response.");
     });
 
-    // Prevent double redirects
     let redirected = false;
 
     webform.setOnFormSubmitted((data) => {
-      console.log("onFormSubmitted fired. Data:", data);
-
+      console.log("onFormSubmitted:", data);
       if (redirected) return;
 
-      // Pull IDs + geometry from the payload shape you saw
       const feature = data?.surveyFeatureSet?.features?.[0];
       const attrs = feature?.attributes || {};
       const geom  = feature?.geometry || null;
-
       const addRes = data?.result?.[0]?.addResults?.[0] || {};
 
       const globalId =
@@ -102,43 +85,32 @@
         attrs.objectid || attrs.OBJECTID ||
         addRes.objectId || addRes.objectID || addRes.objectid;
 
-      console.log("Extracted:", { globalId, objectId, hasGeometry: !!geom });
-
-      // If geometry is missing, give the user a clear message.
-      // (This typically means the location wasn't actually set.)
       if (!geom) {
-        setStatus(
-          "Submitted — but location missing",
-          "It looks like the point location did not save. Please submit again and make sure you place/select the point on the map question.",
-          "Needs location"
+        showToast(
+          "Location missing",
+          "Please submit again and make sure you place/select the point on the map question."
         );
         return;
       }
 
-      setStatus("Submitted!", "Redirecting to your map…", "Redirecting");
-
+      showToast("Submitted!", "Opening your map…");
       redirected = true;
 
-      // Prefer GlobalID (best for per-user accuracy)
       if (globalId) {
         window.location.assign(`${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`);
         return;
       }
-
-      // Fallback: OBJECTID
       if (Number.isFinite(Number(objectId))) {
         window.location.assign(`${RESULT_PAGE}?oid=${encodeURIComponent(objectId)}`);
         return;
       }
 
-      // If we can't redirect, allow another attempt
       redirected = false;
-      setStatus(
-        "Submitted — but missing ID",
-        "The form submitted, but no ID was returned to the embed page. Open the console and share the logged data object.",
-        "Error"
-      );
+      showToast("Submitted, but missing ID", "Please try again. If it continues, contact support.");
     });
+
+    // Optional: hide toast after load
+    setTimeout(hideToast, 1500);
   </script>
 </body>
 </html>
