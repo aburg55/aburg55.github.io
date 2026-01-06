@@ -2,10 +2,10 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Survey</title>
+  <title>Website Survey</title>
+
   <style>
     html, body { height: 100%; margin: 0; }
-    #formDiv { height: calc(100% - 48px); }
     #status {
       height: 48px;
       padding: 10px 12px;
@@ -15,18 +15,27 @@
       position: sticky;
       top: 0;
       z-index: 10;
+      display: flex;
+      align-items: center;
     }
+    #formDiv { height: calc(100% - 48px); }
   </style>
 
+  <!-- Survey123 Web App JavaScript API -->
   <script src="https://survey123.arcgis.com/api/jsapi/"></script>
 </head>
 <body>
+
   <div id="status">Ready.</div>
   <div id="formDiv"></div>
 
   <script>
+    // Your Survey123 share itemId:
     const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f9e13";
+
+    // Your results/zoom page:
     const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
+
     const statusEl = document.getElementById("status");
 
     const webform = new Survey123WebForm({
@@ -34,43 +43,54 @@
       itemId: SURVEY_ITEM_ID
     });
 
-    // Fires when user clicks submit (pre-submit)
+    // Optional: shows submission starting
     webform.setOnFormSubmit(() => {
       console.log("onFormSubmit fired");
       statusEl.textContent = "Submitting…";
     });
 
+    // Prevent double redirects if the event fires twice
+    let redirected = false;
+
     // Fires after successful submission (this is the one we need)
     webform.setOnFormSubmitted((data) => {
       console.log("onFormSubmitted fired. Data:", data);
+
+      if (redirected) return;
+      redirected = true;
+
       statusEl.textContent = "Submitted. Redirecting…";
 
-      // Survey123 can return IDs in different shapes; try a few common ones.
-      const globalId =
-        data?.globalId ||
-        data?.result?.globalId ||
-        data?.feature?.attributes?.globalid ||
-        data?.feature?.attributes?.GlobalID;
+      // 1) Try to read IDs from the feature attributes (most reliable)
+      const attrs = data?.surveyFeatureSet?.features?.[0]?.attributes || {};
+      const globalIdFromAttrs = attrs.globalid || attrs.GlobalID || attrs.GLOBALID;
+      const objectIdFromAttrs = attrs.objectid || attrs.OBJECTID;
 
-      const objectId =
-        data?.objectId ||
-        data?.result?.objectId ||
-        data?.feature?.attributes?.objectid ||
-        data?.feature?.attributes?.OBJECTID;
+      // 2) Fallback: read IDs from the addResults response
+      const addRes = data?.result?.[0]?.addResults?.[0] || {};
+      const globalIdFromAdd = addRes.globalId || addRes.globalID || addRes.GlobalID;
+      const objectIdFromAdd = addRes.objectId || addRes.objectID || addRes.objectid;
+
+      const globalId = globalIdFromAttrs || globalIdFromAdd;
+      const objectId = objectIdFromAttrs || objectIdFromAdd;
+
+      console.log("Extracted IDs:", { globalId, objectId });
 
       if (globalId) {
-        window.location.href = `${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`;
+        window.location.assign(`${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`);
         return;
       }
 
-      if (objectId) {
-        window.location.href = `${RESULT_PAGE}?oid=${encodeURIComponent(objectId)}`;
+      if (Number.isFinite(Number(objectId))) {
+        window.location.assign(`${RESULT_PAGE}?oid=${encodeURIComponent(objectId)}`);
         return;
       }
 
+      redirected = false; // allow retry if we couldn't redirect
       statusEl.textContent = "Submitted, but no ID returned (see Console).";
-      alert("Submitted, but could not read globalId/objectId. Open Console and copy the logged data object.");
+      alert("Submitted, but could not extract globalId/objectId. Open Console and expand data.surveyFeatureSet.features[0].attributes and data.result[0].addResults[0].");
     });
   </script>
+
 </body>
 </html>
