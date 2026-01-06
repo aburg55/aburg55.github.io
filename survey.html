@@ -5,39 +5,58 @@
   <title>Survey</title>
   <style>
     html, body { height: 100%; margin: 0; }
-    #formDiv { height: 100%; }
+    #formDiv { height: calc(100% - 48px); }
+    #status {
+      height: 48px;
+      padding: 10px 12px;
+      font-family: Arial, sans-serif;
+      background: #fff;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
   </style>
 
-  <!-- Survey123 Web App JavaScript API -->
   <script src="https://survey123.arcgis.com/api/jsapi/"></script>
 </head>
 <body>
+  <div id="status">Ready.</div>
   <div id="formDiv"></div>
 
   <script>
     const SURVEY_ITEM_ID = "d4f003f5be254f9bb5a8d92a281f9e13";
     const RESULT_PAGE = "https://aburg55.github.io/testPage.html";
+    const statusEl = document.getElementById("status");
 
     const webform = new Survey123WebForm({
       container: document.getElementById("formDiv"),
       itemId: SURVEY_ITEM_ID
     });
 
-    webform.onFormSubmitted = (e) => {
-      console.log("onFormSubmitted event:", e);
+    // Fires when user clicks submit (pre-submit)
+    webform.setOnFormSubmit(() => {
+      console.log("onFormSubmit fired");
+      statusEl.textContent = "Submitting…";
+    });
 
-      // Try common payload shapes (varies by version)
+    // Fires after successful submission (this is the one we need)
+    webform.setOnFormSubmitted((data) => {
+      console.log("onFormSubmitted fired. Data:", data);
+      statusEl.textContent = "Submitted. Redirecting…";
+
+      // Survey123 can return IDs in different shapes; try a few common ones.
       const globalId =
-        e?.globalId ||
-        e?.result?.globalId ||
-        e?.feature?.attributes?.globalid ||
-        e?.feature?.attributes?.GlobalID;
+        data?.globalId ||
+        data?.result?.globalId ||
+        data?.feature?.attributes?.globalid ||
+        data?.feature?.attributes?.GlobalID;
 
       const objectId =
-        e?.objectId ||
-        e?.result?.objectId ||
-        e?.feature?.attributes?.objectid ||
-        e?.feature?.attributes?.OBJECTID;
+        data?.objectId ||
+        data?.result?.objectId ||
+        data?.feature?.attributes?.objectid ||
+        data?.feature?.attributes?.OBJECTID;
 
       if (globalId) {
         window.location.href = `${RESULT_PAGE}?gid=${encodeURIComponent(globalId)}`;
@@ -49,8 +68,9 @@
         return;
       }
 
-      alert("Submitted, but could not read globalId/objectId from the submission event. Open DevTools Console to inspect the event payload.");
-    };
+      statusEl.textContent = "Submitted, but no ID returned (see Console).";
+      alert("Submitted, but could not read globalId/objectId. Open Console and copy the logged data object.");
+    });
   </script>
 </body>
 </html>
