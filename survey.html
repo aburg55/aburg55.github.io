@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Survey</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #formDiv { height: 100%; }
+  </style>
+
+  <!-- Survey123 Web App JS API -->
+  <script src="https://survey123.arcgis.com/api/jsapi/"></script>
+</head>
+<body>
+  <div id="formDiv"></div>
+
+  <script>
+    // TODO: put your Survey123 itemId here (from the share link)
+    const itemId = "d4f003f5be254f9bb5a8d92a281f9e13";
+
+    // This is your map/thank-you page that zooms to a submission
+    const redirectBase = "https://aburg55.github.io/testPage.html";
+
+    const webform = new Survey123WebForm({
+      container: document.getElementById("formDiv"),
+      itemId
+    });
+
+    webform.onFormSubmitted = (e) => {
+      // e varies slightly by version; log once to confirm
+      console.log("onFormSubmitted event:", e);
+
+      // Try common payload shapes:
+      const globalId =
+        e?.globalId ||
+        e?.result?.globalId ||
+        e?.feature?.attributes?.globalid ||
+        e?.feature?.attributes?.GlobalID;
+
+      const objectId =
+        e?.objectId ||
+        e?.result?.objectId ||
+        e?.feature?.attributes?.objectid ||
+        e?.feature?.attributes?.OBJECTID;
+
+      // Prefer globalId if available
+      if (globalId) {
+        window.location.href = `${redirectBase}?gid=${encodeURIComponent(globalId)}`;
+        return;
+      }
+
+      // Fallback to objectId
+      if (objectId) {
+        window.location.href = `${redirectBase}?oid=${encodeURIComponent(objectId)}`;
+        return;
+      }
+
+      alert("Submitted, but could not read submission id from the form event. Check console log.");
+    };
+  </script>
+</body>
+</html>
