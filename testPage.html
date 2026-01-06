@@ -47,7 +47,7 @@ require([
   view.whenLayerView(layer).then((layerView) => {
 
     layer.queryFeatures({
-      where: `GlobalID='${gid}'`,   // ⚠️ field name matters
+      where: `globalid='${gid}'`,   // ⚠️ field name matters
       returnGeometry: true,
       outFields: ["*"]
     }).then((result) => {
@@ -91,6 +91,7 @@ require([
 
 </body>
 </html>
+
 
 
 
