@@ -9,16 +9,8 @@
   <script src="https://js.arcgis.com/4.28/"></script>
 
   <style>
-    html, body, #viewDiv {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif;
-      background: #ffffff;
-    }
+    html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
+    body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif; background: #ffffff; }
 
     #sheet {
       position: fixed;
@@ -31,28 +23,14 @@
       padding: 14px;
       box-shadow: 0 10px 24px rgba(0,0,0,0.25);
       backdrop-filter: blur(8px);
-      max-height: 34vh;
+      max-height: 38vh;
       overflow: auto;
     }
 
-    #title {
-      font-weight: 800;
-      font-size: 16px;
-      margin-bottom: 6px;
-    }
+    #title { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
+    #msg { font-size: 14px; opacity: 0.9; margin-bottom: 12px; word-break: break-word; }
 
-    #msg {
-      font-size: 14px;
-      opacity: 0.9;
-      margin-bottom: 12px;
-      word-break: break-word;
-    }
-
-    #actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
+    #actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
     .btn {
       border: 0;
@@ -67,9 +45,10 @@
       width: 100%;
     }
 
-    .span-2 {
-      grid-column: 1 / -1;
-    }
+    .span-2 { grid-column: 1 / -1; }
+
+    /* Hide share button until a submission point is found */
+    .hidden { display: none; }
   </style>
 </head>
 
@@ -82,14 +61,13 @@
     <div id="msg">Please wait while we locate your submission.</div>
 
     <div id="actions">
-      <button id="zoomConnector" class="btn span-2">
-        Zoom to Extents of Preferred Alignments
-      </button>
-      <button id="zoomAddress" class="btn span-2">
-        Zoom to Address Entered
-      </button>
+      <button id="zoomConnector" class="btn span-2">Zoom to Extents of Preferred Alignments</button>
+      <button id="zoomAddress" class="btn span-2">Zoom to Address Entered</button>
+
       <button id="radius1" class="btn">Show 1 Mile Radius</button>
       <button id="radius5" class="btn">Show 5 Mile Radius</button>
+
+      <button id="shareBtn" class="btn span-2 hidden">Share This Map</button>
     </div>
   </div>
 
@@ -109,12 +87,86 @@
       const zoomAddressBtn = document.getElementById("zoomAddress");
       const radius1Btn = document.getElementById("radius1");
       const radius5Btn = document.getElementById("radius5");
+      const shareBtn = document.getElementById("shareBtn");
 
       function setStatus(title, msg) {
         titleEl.textContent = title || "";
         msgEl.textContent = msg || "";
       }
 
+      // --- Build a clean share link (strip tracking fragments, keep gid/oid) ---
+      function buildShareUrl() {
+        const url = new URL(window.location.href);
+        url.hash = ""; // remove any #... fragments
+        // If you ever add extra params you don't want to share, remove them here:
+        // url.searchParams.delete("something");
+        return url.toString();
+      }
+
+      async function copyToClipboard(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (e) {
+          // Fallback for older browsers / some kiosk modes
+          try {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "absolute";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+            return ok;
+          } catch (err) {
+            return false;
+          }
+        }
+      }
+
+      async function shareCurrentMap() {
+        // Only allow share after a submission is found (but also safe if clicked early)
+        if (!submissionFeature || !submissionFeature.geometry) {
+          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
+          return;
+        }
+
+        const shareUrl = buildShareUrl();
+
+        const shareText =
+          "Here is the map link showing the address location in relation to the proposed roadway project:\n\n" +
+          shareUrl;
+
+        // Native share sheet on most phones
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: "Roadway Project Map",
+              text: shareText,
+              url: shareUrl
+            });
+            setStatus("Shared", "Share sheet opened. Choose how you want to send it.");
+            return;
+          } catch (e) {
+            // user canceled or share failed — fall back to copy
+            console.warn("navigator.share failed or canceled:", e);
+          }
+        }
+
+        // Fallback: copy to clipboard
+        const copied = await copyToClipboard(shareUrl);
+        if (copied) {
+          setStatus("Link copied", "The link was copied to your clipboard. Paste it into a text or email.");
+        } else {
+          setStatus("Copy failed", "Could not copy automatically. You can manually copy the URL from the address bar.");
+        }
+      }
+
+      shareBtn.addEventListener("click", shareCurrentMap);
+
+      // === 1) Load your AGOL Web Map (basemap + reference layers live here) ===
       const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
 
       const webmap = new WebMap({
@@ -126,6 +178,7 @@
         map: webmap
       });
 
+      // === 2) Add ONLY the Survey points layer in code (on top) ===
       const SURVEY_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
@@ -137,6 +190,7 @@
 
       webmap.add(surveyLayer);
 
+      // === 3) Lock "preferred alignments" extents button to this exact sublayer title ===
       const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
 
       function findReferenceLayerInWebMap() {
@@ -147,13 +201,11 @@
           });
           return arr;
         }
-
         const allLayers = flattenLayers(webmap.layers);
-        return allLayers.find(
-          l => l.type === "feature" && l.title === REFERENCE_LAYER_TITLE
-        ) || null;
+        return allLayers.find(l => l.type === "feature" && l.title === REFERENCE_LAYER_TITLE) || null;
       }
 
+      // --- URL params parsing (same as before) ---
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
       let oid = params.get("oid");
@@ -161,28 +213,37 @@
       let gidForWhere = null;
       if (gid) {
         gid = decodeURIComponent(gid).trim().replace(/^'+|'+$/g, "");
-        const core = gid.replace(/^{|}$/g, "");
-        if (core.length >= 32) gidForWhere = `{${core}}`;
+        const core = gid.replace(/^{/, "").replace(/}$/, "").trim();
+        const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
+        if (!looksLikePlaceholder(core) && core.length >= 32) gidForWhere = `{${core}}`;
       }
 
       const oidNum = oid ? Number(oid) : null;
-      const whereClause = gidForWhere
-        ? `globalid='${gidForWhere}'`
-        : Number.isFinite(oidNum)
-          ? `objectid=${oidNum}`
-          : null;
 
+      let whereClause = null;
+      if (gidForWhere) whereClause = `globalid='${gidForWhere}'`;
+      else if (Number.isFinite(oidNum)) whereClause = `objectid=${oidNum}`;
+
+      console.log("Final whereClause:", whereClause);
+
+      // === Keep references to the found submission & graphics ===
       let submissionFeature = null;
       let markerGraphic = null;
       let radiusGraphic = null;
 
       function clearRadius() {
-        if (radiusGraphic) view.graphics.remove(radiusGraphic);
-        radiusGraphic = null;
+        if (radiusGraphic) {
+          view.graphics.remove(radiusGraphic);
+          radiusGraphic = null;
+        }
       }
 
       function drawMarker(point) {
-        if (markerGraphic) view.graphics.remove(markerGraphic);
+        if (markerGraphic) {
+          view.graphics.remove(markerGraphic);
+          markerGraphic = null;
+        }
+
         markerGraphic = new Graphic({
           geometry: point,
           symbol: {
@@ -193,14 +254,16 @@
             outline: { color: [0, 0, 0, 1], width: 2 }
           }
         });
+
         view.graphics.add(markerGraphic);
       }
 
       async function zoomToSubmissionPoint() {
-        if (!submissionFeature) {
-          setStatus("Not ready yet", "Address point not found yet.");
+        if (!submissionFeature || !submissionFeature.geometry) {
+          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
           return;
         }
+
         clearRadius();
         drawMarker(submissionFeature.geometry);
         await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
@@ -208,22 +271,19 @@
       }
 
       async function showRadius(miles) {
-        if (!submissionFeature) {
-          setStatus("Not ready yet", "Address point not found yet.");
+        if (!submissionFeature || !submissionFeature.geometry) {
+          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
           return;
         }
 
-        const buffer = geometryEngine.geodesicBuffer(
-          submissionFeature.geometry,
-          miles,
-          "miles"
-        );
+        const pt = submissionFeature.geometry;
+        const bufferPoly = geometryEngine.geodesicBuffer(pt, miles, "miles");
 
         clearRadius();
-        drawMarker(submissionFeature.geometry);
+        drawMarker(pt);
 
         radiusGraphic = new Graphic({
-          geometry: buffer,
+          geometry: bufferPoly,
           symbol: {
             type: "simple-fill",
             color: [26, 115, 232, 0.12],
@@ -232,63 +292,98 @@
         });
 
         view.graphics.add(radiusGraphic);
-        await view.goTo(buffer.extent.expand(1.2));
-        setStatus("Radius shown", `${miles} mile radius displayed.`);
+        await view.goTo(bufferPoly.extent.expand(1.2));
+        setStatus("Radius shown", `${miles} mile radius displayed around the submitted address.`);
       }
 
       async function zoomToReferenceLayerExtent() {
-        setStatus("Preferred alignments", "Calculating extents…");
+        try {
+          setStatus("Preferred alignments", "Calculating extents…");
 
-        const layer = findReferenceLayerInWebMap();
-        if (!layer) {
-          setStatus("Error", "Preferred alignment layer not found.");
-          return;
+          await webmap.load();
+          const referenceLayer = findReferenceLayerInWebMap();
+
+          if (!referenceLayer) {
+            setStatus("Error", `Could not find the layer titled "${REFERENCE_LAYER_TITLE}" in the Web Map.`);
+            return;
+          }
+
+          await referenceLayer.when();
+
+          let ext = referenceLayer.fullExtent;
+          if (!ext) {
+            const extRes = await referenceLayer.queryExtent({ where: "1=1" });
+            ext = extRes?.extent || null;
+          }
+
+          if (!ext) {
+            setStatus("Error", "Could not determine layer extents.");
+            return;
+          }
+
+          clearRadius();
+          await view.goTo(ext.expand(1.15));
+          setStatus("Preferred alignments", "Zoomed to preferred alignment extents.");
+        } catch (e) {
+          console.error(e);
+          setStatus("Error", "Could not zoom to extents.");
         }
-
-        await layer.when();
-        let ext = layer.fullExtent;
-
-        if (!ext) {
-          const res = await layer.queryExtent({ where: "1=1" });
-          ext = res.extent;
-        }
-
-        clearRadius();
-        await view.goTo(ext.expand(1.15));
-        setStatus("Preferred alignments", "Zoomed to preferred alignment extents.");
       }
 
-      zoomConnectorBtn.onclick = zoomToReferenceLayerExtent;
-      zoomAddressBtn.onclick = zoomToSubmissionPoint;
-      radius1Btn.onclick = () => showRadius(1);
-      radius5Btn.onclick = () => showRadius(5);
+      // === Button wiring ===
+      zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
+      zoomAddressBtn.addEventListener("click", zoomToSubmissionPoint);
+      radius1Btn.addEventListener("click", () => showRadius(1));
+      radius5Btn.addEventListener("click", () => showRadius(5));
 
+      // === Locate the submission (same retry approach) ===
       view.when(async () => {
         if (!whereClause) {
-          setStatus("Error", "No valid GlobalID or OBJECTID provided.");
+          setStatus("Error", "No valid GlobalID or OBJECTID was passed.");
           return;
         }
 
-        for (let i = 0; i < 14; i++) {
+        await surveyLayer.when();
+
+        const MAX_ATTEMPTS = 14;
+        const RETRY_DELAY = 700;
+
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
+          console.log("Query attempt WHERE:", whereClause);
+
           const res = await surveyLayer.queryFeatures({
             where: whereClause,
             returnGeometry: true,
             outFields: ["*"]
           });
 
-          if (res.features.length) {
+          if (res.features && res.features.length > 0) {
             submissionFeature = res.features[0];
-            drawMarker(submissionFeature.geometry);
+
+            if (!submissionFeature.geometry || submissionFeature.geometry.type !== "point") {
+              setStatus("Submitted", "Address recorded, but no point geometry exists.");
+              return;
+            }
+
             await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
+
+            clearRadius();
+            drawMarker(submissionFeature.geometry);
+
             surveyLayer.definitionExpression = whereClause;
+
+            // Reveal the share button once we have a valid point
+            shareBtn.classList.remove("hidden");
+
             setStatus("Thank you!", "Your submitted address was successfully located.");
             return;
           }
 
-          await new Promise(r => setTimeout(r, 700));
+          await new Promise(r => setTimeout(r, RETRY_DELAY));
         }
 
-        setStatus("Still processing", "If you just submitted, try again shortly.");
+        setStatus("Still processing", "If you just submitted, try again in a moment.");
       });
 
     });
