@@ -12,12 +12,18 @@
     html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
     body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif; background: #ffffff; }
 
-    /* === Floating search button (top-right) === */
-    #searchBtn {
+    /* === Top-right buttons container === */
+    #topRight {
       position: fixed;
       top: calc(12px + env(safe-area-inset-top));
       right: 12px;
       z-index: 10000;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .iconBtn {
       width: 44px;
       height: 44px;
       border-radius: 50%;
@@ -30,7 +36,7 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.25);
       cursor: pointer;
     }
-    #searchBtn svg { width: 22px; height: 22px; fill: white; }
+    .iconBtn svg { width: 22px; height: 22px; fill: white; }
 
     /* Bottom sheet */
     #sheet {
@@ -48,8 +54,44 @@
       overflow: auto;
     }
 
-    #title { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
-    #msg { font-size: 14px; opacity: 0.9; margin-bottom: 12px; word-break: break-word; }
+    #titleRow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    #title { font-weight: 800; font-size: 16px; }
+    #spinner {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(26,115,232,0.25);
+      border-top-color: rgba(26,115,232,1);
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #msg { font-size: 14px; opacity: 0.9; margin-bottom: 10px; word-break: break-word; line-height: 1.35; }
+
+    /* Small inline link (not a big button) */
+    #inlineLinks {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .textLink {
+      border: none;
+      background: transparent;
+      padding: 0;
+      color: #1a73e8;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .hidden { display: none; }
 
     #actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
@@ -66,8 +108,13 @@
       width: 100%;
     }
 
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
     .span-2 { grid-column: 1 / -1; }
-    .hidden { display: none; }
 
     /* === Confirm modal === */
     #confirmOverlay {
@@ -80,7 +127,6 @@
       justify-content: center;
       padding: 18px;
     }
-
     #confirmBox {
       width: min(420px, 100%);
       background: rgba(255,255,255,0.98);
@@ -89,56 +135,99 @@
       padding: 16px;
       backdrop-filter: blur(8px);
     }
-
-    #confirmTitle {
-      font-weight: 800;
-      font-size: 16px;
-      margin-bottom: 6px;
-    }
-
-    #confirmText {
-      font-size: 14px;
-      opacity: 0.9;
-      margin-bottom: 14px;
-      line-height: 1.35;
-    }
-
-    #confirmActions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
+    #confirmTitle { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
+    #confirmText { font-size: 14px; opacity: 0.9; margin-bottom: 14px; line-height: 1.35; }
+    #confirmActions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .btnSecondary {
       background: #ffffff;
       color: #1a73e8;
       border: 2px solid rgba(26,115,232,0.35);
       box-shadow: none;
     }
+
+    /* === Info modal === */
+    #infoOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      background: rgba(0,0,0,0.35);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    #infoBox {
+      width: min(520px, 100%);
+      background: rgba(255,255,255,0.98);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+    #infoTitle { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
+    #infoText { font-size: 14px; opacity: 0.92; line-height: 1.4; }
+    #infoActions { margin-top: 14px; display: grid; grid-template-columns: 1fr; gap: 10px; }
+
+    /* === Toast hint === */
+    #toast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      top: calc(66px + env(safe-area-inset-top));
+      z-index: 15000;
+      background: rgba(0,0,0,0.78);
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      display: none;
+      max-width: min(520px, calc(100vw - 24px));
+      text-align: center;
+    }
   </style>
 </head>
 
 <body>
 
-  <!-- 🔍 Search / Back to Survey button -->
-  <button id="searchBtn" title="Enter another address">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.48-5.34C15.21 5.01 12.2 2 8.6 2S2 5.01 2 8.39c0 3.38 3.01 6.39 6.6 6.39 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.99 4.88 1.49-1.46L15.5 14zm-6.9 0C6.01 14 4 11.99 4 9.39S6.01 4.78 8.6 4.78s4.6 2.01 4.6 4.61S11.19 14 8.6 14z"/>
-    </svg>
-  </button>
+  <!-- Top-right icons -->
+  <div id="topRight">
+    <button id="infoBtn" class="iconBtn" title="Info">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 15a1 1 0 0 1-1-1v-5a1 1 0 1 1 2 0v5a1 1 0 0 1-1 1zm0-9a1.25 1.25 0 1 1 0-2.5A1.25 1.25 0 0 1 12 8z"/>
+      </svg>
+    </button>
+
+    <button id="searchBtn" class="iconBtn" title="Enter another address">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.48-5.34C15.21 5.01 12.2 2 8.6 2S2 5.01 2 8.39c0 3.38 3.01 6.39 6.6 6.39 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.99 4.88 1.49-1.46L15.5 14zm-6.9 0C6.01 14 4 11.99 4 9.39S6.01 4.78 8.6 4.78s4.6 2.01 4.6 4.61S11.19 14 8.6 14z"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="toast">Tip: Tap 🔍 to enter another address.</div>
 
   <div id="viewDiv"></div>
 
   <div id="sheet">
-    <div id="title">Loading…</div>
+    <div id="titleRow">
+      <div id="spinner"></div>
+      <div id="title">Loading…</div>
+    </div>
+
     <div id="msg">Please wait while we locate your submission.</div>
 
+    <div id="inlineLinks">
+      <button id="hideRadiusLink" class="textLink hidden">Hide radius</button>
+    </div>
+
     <div id="actions">
-      <button id="zoomConnector" class="btn span-2">Zoom to Extents of Preferred Alignments</button>
-      <button id="zoomAddress" class="btn span-2">Zoom to Address Entered</button>
-      <button id="radius1" class="btn">Show 1 Mile Radius</button>
-      <button id="radius5" class="btn">Show 5 Mile Radius</button>
-      <button id="shareBtn" class="btn span-2 hidden">Share This Map</button>
+      <button id="zoomConnector" class="btn span-2" disabled>Zoom to Extents of Preferred Alignments</button>
+      <button id="zoomAddress" class="btn span-2" disabled>Zoom to Address Entered</button>
+      <button id="radius1" class="btn" disabled>Show 1 Mile Radius</button>
+      <button id="radius5" class="btn" disabled>Show 5 Mile Radius</button>
+      <button id="shareBtn" class="btn span-2" disabled>Share This Map</button>
     </div>
   </div>
 
@@ -147,10 +236,25 @@
     <div id="confirmBox">
       <div id="confirmTitle">Enter another address?</div>
       <div id="confirmText">This will take you back to the address entry page.</div>
-
       <div id="confirmActions">
         <button id="confirmCancel" class="btn btnSecondary">Cancel</button>
         <button id="confirmGo" class="btn">Yes, go back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info modal -->
+  <div id="infoOverlay" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+    <div id="infoBox">
+      <div id="infoTitle">What am I looking at?</div>
+      <div id="infoText">
+        <div style="margin-bottom:10px;"><b>⭐ Star</b> = the address you entered</div>
+        <div style="margin-bottom:10px;"><b>Blue circle</b> = 1-mile or 5-mile radius from your address</div>
+        <div style="margin-bottom:10px;"><b>Preferred alignments</b> = proposed roadway alignment options for this project</div>
+        <div>Tip: Tap <b>Share This Map</b> to send the link to yourself or someone else.</div>
+      </div>
+      <div id="infoActions">
+        <button id="infoClose" class="btn">Close</button>
       </div>
     </div>
   </div>
@@ -161,22 +265,9 @@
       "esri/views/MapView",
       "esri/layers/FeatureLayer",
       "esri/geometry/geometryEngine",
-      "esri/Graphic"
-    ], function (WebMap, MapView, FeatureLayer, geometryEngine, Graphic) {
-
-      const titleEl = document.getElementById("title");
-      const msgEl = document.getElementById("msg");
-
-      const zoomConnectorBtn = document.getElementById("zoomConnector");
-      const zoomAddressBtn = document.getElementById("zoomAddress");
-      const radius1Btn = document.getElementById("radius1");
-      const radius5Btn = document.getElementById("radius5");
-      const shareBtn = document.getElementById("shareBtn");
-
-      function setStatus(title, msg) {
-        titleEl.textContent = title || "";
-        msgEl.textContent = msg || "";
-      }
+      "esri/Graphic",
+      "esri/geometry/support/webMercatorUtils"
+    ], function (WebMap, MapView, FeatureLayer, geometryEngine, Graphic, webMercatorUtils) {
 
       /* =====================
          CONFIG
@@ -187,37 +278,86 @@
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
       const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
 
+      // ✅ Your Survey123 address field name (actual field name, not alias)
+      const ADDRESS_FIELD = "enter_your_address_here";
+
+      /* =====================
+         UI refs
+      ====================== */
+      const titleEl = document.getElementById("title");
+      const msgEl = document.getElementById("msg");
+      const spinnerEl = document.getElementById("spinner");
+
+      const zoomConnectorBtn = document.getElementById("zoomConnector");
+      const zoomAddressBtn = document.getElementById("zoomAddress");
+      const radius1Btn = document.getElementById("radius1");
+      const radius5Btn = document.getElementById("radius5");
+      const shareBtn = document.getElementById("shareBtn");
+      const hideRadiusLink = document.getElementById("hideRadiusLink");
+
+      const toastEl = document.getElementById("toast");
+
+      function setStatus(title, msg, spinning=false) {
+        titleEl.textContent = title || "";
+        msgEl.textContent = msg || "";
+        spinnerEl.style.display = spinning ? "inline-block" : "none";
+      }
+
+      function setControlsEnabled(enabled) {
+        zoomConnectorBtn.disabled = !enabled;
+        zoomAddressBtn.disabled = !enabled;
+        radius1Btn.disabled = !enabled;
+        radius5Btn.disabled = !enabled;
+        shareBtn.disabled = !enabled;
+      }
+
+      function showToastOncePerSession(text, ms=2200) {
+        try {
+          const key = "toast_search_hint_shown";
+          if (sessionStorage.getItem(key) === "1") return;
+          sessionStorage.setItem(key, "1");
+        } catch (_) {}
+
+        toastEl.textContent = text;
+        toastEl.style.display = "block";
+        setTimeout(() => { toastEl.style.display = "none"; }, ms);
+      }
+
       /* =====================
          Confirm modal logic
       ====================== */
       const searchBtn = document.getElementById("searchBtn");
-      const overlay = document.getElementById("confirmOverlay");
+      const confirmOverlay = document.getElementById("confirmOverlay");
       const confirmCancel = document.getElementById("confirmCancel");
       const confirmGo = document.getElementById("confirmGo");
 
-      function openConfirm() {
-        overlay.style.display = "flex";
-      }
-      function closeConfirm() {
-        overlay.style.display = "none";
-      }
+      function openConfirm() { confirmOverlay.style.display = "flex"; }
+      function closeConfirm() { confirmOverlay.style.display = "none"; }
 
       searchBtn.addEventListener("click", openConfirm);
       confirmCancel.addEventListener("click", closeConfirm);
       confirmGo.addEventListener("click", () => { window.location.href = SURVEY_FORM_URL; });
 
-      // Close if user taps outside the box
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) closeConfirm();
-      });
-
-      // Close on Esc (for keyboard/tablet cases)
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && overlay.style.display === "flex") closeConfirm();
-      });
+      confirmOverlay.addEventListener("click", (e) => { if (e.target === confirmOverlay) closeConfirm(); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && confirmOverlay.style.display === "flex") closeConfirm(); });
 
       /* =====================
-         Share button helpers
+         Info modal logic
+      ====================== */
+      const infoBtn = document.getElementById("infoBtn");
+      const infoOverlay = document.getElementById("infoOverlay");
+      const infoClose = document.getElementById("infoClose");
+
+      function openInfo() { infoOverlay.style.display = "flex"; }
+      function closeInfo() { infoOverlay.style.display = "none"; }
+
+      infoBtn.addEventListener("click", openInfo);
+      infoClose.addEventListener("click", closeInfo);
+      infoOverlay.addEventListener("click", (e) => { if (e.target === infoOverlay) closeInfo(); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && infoOverlay.style.display === "flex") closeInfo(); });
+
+      /* =====================
+         Share helpers
       ====================== */
       function buildShareUrl() {
         const url = new URL(window.location.href);
@@ -241,46 +381,11 @@
             const ok = document.execCommand("copy");
             document.body.removeChild(ta);
             return ok;
-          } catch (err) {
+          } catch (_) {
             return false;
           }
         }
       }
-
-      async function shareCurrentMap() {
-        if (!submissionFeature || !submissionFeature.geometry) {
-          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
-          return;
-        }
-
-        const shareUrl = buildShareUrl();
-        const shareText =
-          "Here is the map link showing the address location in relation to the proposed roadway project:\n\n" +
-          shareUrl;
-
-        if (navigator.share) {
-          try {
-            await navigator.share({
-              title: "Roadway Project Map",
-              text: shareText,
-              url: shareUrl
-            });
-            setStatus("Shared", "Share sheet opened. Choose how you want to send it.");
-            return;
-          } catch (e) {
-            console.warn("navigator.share failed or canceled:", e);
-          }
-        }
-
-        const copied = await copyToClipboard(shareUrl);
-        if (copied) {
-          setStatus("Link copied", "The link was copied. Paste it into a text or email.");
-        } else {
-          setStatus("Copy failed", "Could not copy automatically. You can copy the URL from the address bar.");
-        }
-      }
-
-      shareBtn.addEventListener("click", shareCurrentMap);
 
       /* =====================
          WebMap + View
@@ -333,27 +438,28 @@
       if (gidForWhere) whereClause = `globalid='${gidForWhere}'`;
       else if (Number.isFinite(oidNum)) whereClause = `objectid=${oidNum}`;
 
-      console.log("Final whereClause:", whereClause);
-
       /* =====================
          Submission + graphics
       ====================== */
       let submissionFeature = null;
       let markerGraphic = null;
       let radiusGraphic = null;
+      let currentRadiusMiles = null;
 
       function clearRadius() {
-        if (radiusGraphic) {
-          view.graphics.remove(radiusGraphic);
-          radiusGraphic = null;
-        }
+        if (radiusGraphic) view.graphics.remove(radiusGraphic);
+        radiusGraphic = null;
+        currentRadiusMiles = null;
+        hideRadiusLink.classList.add("hidden");
       }
 
+      hideRadiusLink.addEventListener("click", () => {
+        clearRadius();
+        setStatus("Radius hidden", "Radius circle removed. You can show it again with the 1-mile or 5-mile buttons.");
+      });
+
       function drawMarker(point) {
-        if (markerGraphic) {
-          view.graphics.remove(markerGraphic);
-          markerGraphic = null;
-        }
+        if (markerGraphic) view.graphics.remove(markerGraphic);
 
         markerGraphic = new Graphic({
           geometry: point,
@@ -369,21 +475,47 @@
         view.graphics.add(markerGraphic);
       }
 
-      async function zoomToSubmissionPoint() {
-        if (!submissionFeature || !submissionFeature.geometry) {
-          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
-          return;
+      // ✅ Updated to use your actual field name, with nicer wording
+      function getReadableLocation(feature) {
+        const a = feature?.attributes || {};
+        const addr = a[ADDRESS_FIELD];
+
+        if (typeof addr === "string" && addr.trim().length) {
+          return `Address entered: ${addr.trim()}`;
         }
 
-        clearRadius();
+        // Fallback to lat/long if address field is empty
+        try {
+          const pt = feature.geometry;
+          const g = (pt.spatialReference && pt.spatialReference.isWebMercator)
+            ? webMercatorUtils.webMercatorToGeographic(pt)
+            : pt;
+
+          if (g && typeof g.latitude === "number" && typeof g.longitude === "number") {
+            const lat = g.latitude.toFixed(5);
+            const lon = g.longitude.toFixed(5);
+            return `Address located (approx.): ${lat}, ${lon}`;
+          }
+        } catch (_) {}
+
+        return "Address located.";
+      }
+
+      async function zoomToSubmissionPoint() {
+        if (!submissionFeature || !submissionFeature.geometry) return;
+
         drawMarker(submissionFeature.geometry);
         await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
-        setStatus("Address located", "Zoomed to the address you entered.");
+
+        setStatus("Address located", getReadableLocation(submissionFeature));
       }
 
       async function showRadius(miles) {
-        if (!submissionFeature || !submissionFeature.geometry) {
-          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
+        if (!submissionFeature || !submissionFeature.geometry) return;
+
+        if (currentRadiusMiles === miles && radiusGraphic) {
+          clearRadius();
+          setStatus("Radius hidden", "Radius circle removed. You can show it again anytime.");
           return;
         }
 
@@ -403,19 +535,21 @@
         });
 
         view.graphics.add(radiusGraphic);
+        currentRadiusMiles = miles;
+        hideRadiusLink.classList.remove("hidden");
+
         await view.goTo(bufferPoly.extent.expand(1.2));
         setStatus("Radius shown", `${miles} mile radius displayed around the submitted address.`);
       }
 
       async function zoomToReferenceLayerExtent() {
-        try {
-          setStatus("Preferred alignments", "Calculating extents…");
+        setStatus("Preferred alignments", "Calculating extents…", true);
 
+        try {
           await webmap.load();
           const referenceLayer = findReferenceLayerInWebMap();
-
           if (!referenceLayer) {
-            setStatus("Error", `Could not find the layer titled "${REFERENCE_LAYER_TITLE}" in the Web Map.`);
+            setStatus("Error", `Could not find "${REFERENCE_LAYER_TITLE}" in the web map.`);
             return;
           }
 
@@ -428,16 +562,45 @@
           }
 
           if (!ext) {
-            setStatus("Error", "Could not determine layer extents.");
+            setStatus("Error", "Could not determine alignment extents.");
             return;
           }
 
-          clearRadius();
           await view.goTo(ext.expand(1.15));
           setStatus("Preferred alignments", "Zoomed to preferred alignment extents.");
         } catch (e) {
           console.error(e);
           setStatus("Error", "Could not zoom to extents.");
+        }
+      }
+
+      async function shareCurrentMap() {
+        if (!submissionFeature || !submissionFeature.geometry) return;
+
+        const shareUrl = buildShareUrl();
+        const shareText =
+          "Roadway Project Map (shows the address location relative to the proposed roadway):\n\n" +
+          shareUrl;
+
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: "Roadway Project Map",
+              text: shareText,
+              url: shareUrl
+            });
+            setStatus("Shared", "Choose how you want to send it.");
+            return;
+          } catch (e) {
+            console.warn("navigator.share failed or canceled:", e);
+          }
+        }
+
+        const copied = await copyToClipboard(shareUrl);
+        if (copied) {
+          setStatus("Link copied", "Link copied. Open Messages or Email and paste the link to send it.");
+        } else {
+          setStatus("Copy failed", "Could not copy automatically. You can copy the page URL from the browser address bar.");
         }
       }
 
@@ -448,13 +611,17 @@
       zoomAddressBtn.addEventListener("click", zoomToSubmissionPoint);
       radius1Btn.addEventListener("click", () => showRadius(1));
       radius5Btn.addEventListener("click", () => showRadius(5));
+      shareBtn.addEventListener("click", shareCurrentMap);
 
       /* =====================
          Locate the submission
       ====================== */
+      setControlsEnabled(false);
+      setStatus("Finding your submission…", "Please wait while we locate your submitted address.", true);
+
       view.when(async () => {
         if (!whereClause) {
-          setStatus("Error", "No valid GlobalID or OBJECTID was passed.");
+          setStatus("Error", "No valid GlobalID or OBJECTID was passed.", false);
           return;
         }
 
@@ -464,8 +631,7 @@
         const RETRY_DELAY = 700;
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-          setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
-          console.log("Query attempt WHERE:", whereClause);
+          setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`, true);
 
           const res = await surveyLayer.queryFeatures({
             where: whereClause,
@@ -477,27 +643,29 @@
             submissionFeature = res.features[0];
 
             if (!submissionFeature.geometry || submissionFeature.geometry.type !== "point") {
-              setStatus("Submitted", "Address recorded, but no point geometry exists.");
+              setStatus("Submitted", "Address recorded, but no point geometry exists.", false);
               return;
             }
 
-            await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
+            setControlsEnabled(true);
+
             clearRadius();
             drawMarker(submissionFeature.geometry);
+            await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
 
             surveyLayer.definitionExpression = whereClause;
 
-            // Reveal share button once we have a valid point
-            shareBtn.classList.remove("hidden");
+            setStatus("Address located", getReadableLocation(submissionFeature), false);
 
-            setStatus("Thank you!", "Your submitted address was successfully located.");
+            showToastOncePerSession("Tip: Tap 🔍 to enter another address.");
+
             return;
           }
 
           await new Promise(r => setTimeout(r, RETRY_DELAY));
         }
 
-        setStatus("Still processing", "If you just submitted, try again in a moment.");
+        setStatus("Still processing", "If you just submitted, try again in a moment (or reload the page).", false);
       });
 
     });
