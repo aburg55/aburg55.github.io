@@ -86,10 +86,10 @@
 
   <script>
     require([
-      "esri/Map",
+      "esri/WebMap",
       "esri/views/MapView",
       "esri/layers/FeatureLayer"
-    ], function (Map, MapView, FeatureLayer) {
+    ], function (WebMap, MapView, FeatureLayer) {
 
       const titleEl = document.getElementById("title");
       const msgEl = document.getElementById("msg");
@@ -103,12 +103,35 @@
 
       refreshBtn.addEventListener("click", () => location.reload());
 
+      // === 1) Load your AGOL Web Map (basemap + reference layers live here) ===
+      const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
+
+      const webmap = new WebMap({
+        portalItem: { id: WEBMAP_ID }
+      });
+
+      const view = new MapView({
+        container: "viewDiv",
+        map: webmap
+      });
+
+      // === 2) Add ONLY the Survey points layer in code (on top) ===
       const SURVEY_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
+      // This was your previous connector layer URL; now we use it to FIND that layer inside the WebMap
       const REFERENCE_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/ArcGIS/rest/services/New_Alignments_N211_and_N223/FeatureServer/0";
 
+      const surveyLayer = new FeatureLayer({
+        url: SURVEY_LAYER_URL,
+        outFields: ["*"],
+        opacity: 0.4
+      });
+
+      webmap.add(surveyLayer);
+
+      // --- URL params parsing (same as before) ---
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
       let oid = params.get("oid");
@@ -118,9 +141,7 @@
 
       if (gid) {
         gid = decodeURIComponent(gid).trim();
-
         gid = gid.replace(/^'+|'+$/g, "");
-
         const core = gid.replace(/^{/, "").replace(/}$/, "").trim();
 
         const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
@@ -142,43 +163,39 @@
 
       console.log("Final whereClause:", whereClause);
 
-      const map = new Map({
-        basemap: "hybrid"
-      });
-
-      const view = new MapView({
-        container: "viewDiv",
-        map: map,
-        zoom: 4
-      });
-
-      const referenceLayer = new FeatureLayer({
-        url: REFERENCE_LAYER_URL,
-        opacity: 0.4
-      });
-
-      referenceLayer.renderer = {
-        type: "simple",
-        symbol: {
-          type: "simple-line",
-          color: [255, 0, 0, 1],
-          width: 3
+      // === Helper: find connector layer inside the WebMap ===
+      function findReferenceLayerInWebMap() {
+        // webmap.layers includes only *top-level* operational layers
+        // if you have group layers, we’ll also search recursively.
+        function flattenLayers(layerCollection, arr = []) {
+          layerCollection.forEach(l => {
+            arr.push(l);
+            if (l.layers && l.layers.length) flattenLayers(l.layers, arr); // GroupLayer
+          });
+          return arr;
         }
-      };
 
-      map.add(referenceLayer);
+        const all = flattenLayers(webmap.layers);
 
-      const surveyLayer = new FeatureLayer({
-        url: SURVEY_LAYER_URL,
-        outFields: ["*"],
-        opacity: 0.4
-      });
+        // Try to match by URL first (most reliable)
+        const byUrl = all.find(l => l.url && l.url.toLowerCase() === REFERENCE_LAYER_URL.toLowerCase());
+        if (byUrl) return byUrl;
 
-      map.add(surveyLayer);
+        // Fallback: first FeatureLayer in the web map (so the button doesn't hard-fail)
+        const firstFL = all.find(l => l.type === "feature" && l.url);
+        return firstFL || null;
+      }
 
       async function zoomToReferenceLayerExtent() {
         try {
           setStatus("Connector roadway", "Calculating extents…");
+
+          const referenceLayer = findReferenceLayerInWebMap();
+          if (!referenceLayer) {
+            setStatus("Error", "Could not find a reference layer in the Web Map.");
+            return;
+          }
+
           await referenceLayer.when();
 
           let ext = referenceLayer.fullExtent;
@@ -221,7 +238,6 @@
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 
           setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
-
           console.log("Query attempt WHERE:", whereClause);
 
           const res = await surveyLayer.queryFeatures({
@@ -260,6 +276,7 @@
               }
             });
 
+            // Optional: filter the survey layer to show only that submission
             surveyLayer.definitionExpression = whereClause;
 
             setStatus("Thank you!", "Your submitted address was successfully located.");
