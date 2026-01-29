@@ -12,6 +12,27 @@
     html, body, #viewDiv { height: 100%; margin: 0; padding: 0; }
     body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif; background: #ffffff; }
 
+    /* === Floating search button (top-right) === */
+    #searchBtn {
+      position: fixed;
+      top: calc(12px + env(safe-area-inset-top));
+      right: 12px;
+      z-index: 10000;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: #1a73e8;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+      cursor: pointer;
+    }
+    #searchBtn svg { width: 22px; height: 22px; fill: white; }
+
+    /* Bottom sheet */
     #sheet {
       position: fixed;
       left: 12px;
@@ -23,7 +44,7 @@
       padding: 14px;
       box-shadow: 0 10px 24px rgba(0,0,0,0.25);
       backdrop-filter: blur(8px);
-      max-height: 38vh;
+      max-height: 40vh;
       overflow: auto;
     }
 
@@ -46,13 +67,65 @@
     }
 
     .span-2 { grid-column: 1 / -1; }
-
-    /* Hide share button until a submission point is found */
     .hidden { display: none; }
+
+    /* === Confirm modal === */
+    #confirmOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      background: rgba(0,0,0,0.35);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+
+    #confirmBox {
+      width: min(420px, 100%);
+      background: rgba(255,255,255,0.98);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+
+    #confirmTitle {
+      font-weight: 800;
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+
+    #confirmText {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 14px;
+      line-height: 1.35;
+    }
+
+    #confirmActions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btnSecondary {
+      background: #ffffff;
+      color: #1a73e8;
+      border: 2px solid rgba(26,115,232,0.35);
+      box-shadow: none;
+    }
   </style>
 </head>
 
 <body>
+
+  <!-- 🔍 Search / Back to Survey button -->
+  <button id="searchBtn" title="Enter another address">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.48-5.34C15.21 5.01 12.2 2 8.6 2S2 5.01 2 8.39c0 3.38 3.01 6.39 6.6 6.39 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.99 4.88 1.49-1.46L15.5 14zm-6.9 0C6.01 14 4 11.99 4 9.39S6.01 4.78 8.6 4.78s4.6 2.01 4.6 4.61S11.19 14 8.6 14z"/>
+    </svg>
+  </button>
 
   <div id="viewDiv"></div>
 
@@ -63,11 +136,22 @@
     <div id="actions">
       <button id="zoomConnector" class="btn span-2">Zoom to Extents of Preferred Alignments</button>
       <button id="zoomAddress" class="btn span-2">Zoom to Address Entered</button>
-
       <button id="radius1" class="btn">Show 1 Mile Radius</button>
       <button id="radius5" class="btn">Show 5 Mile Radius</button>
-
       <button id="shareBtn" class="btn span-2 hidden">Share This Map</button>
+    </div>
+  </div>
+
+  <!-- Confirm modal -->
+  <div id="confirmOverlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <div id="confirmBox">
+      <div id="confirmTitle">Enter another address?</div>
+      <div id="confirmText">This will take you back to the address entry page.</div>
+
+      <div id="confirmActions">
+        <button id="confirmCancel" class="btn btnSecondary">Cancel</button>
+        <button id="confirmGo" class="btn">Yes, go back</button>
+      </div>
     </div>
   </div>
 
@@ -94,12 +178,50 @@
         msgEl.textContent = msg || "";
       }
 
-      // --- Build a clean share link (strip tracking fragments, keep gid/oid) ---
+      /* =====================
+         CONFIG
+      ====================== */
+      const SURVEY_FORM_URL = "https://aburg55.github.io/survey.html";
+      const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
+      const SURVEY_LAYER_URL =
+        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
+      const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
+
+      /* =====================
+         Confirm modal logic
+      ====================== */
+      const searchBtn = document.getElementById("searchBtn");
+      const overlay = document.getElementById("confirmOverlay");
+      const confirmCancel = document.getElementById("confirmCancel");
+      const confirmGo = document.getElementById("confirmGo");
+
+      function openConfirm() {
+        overlay.style.display = "flex";
+      }
+      function closeConfirm() {
+        overlay.style.display = "none";
+      }
+
+      searchBtn.addEventListener("click", openConfirm);
+      confirmCancel.addEventListener("click", closeConfirm);
+      confirmGo.addEventListener("click", () => { window.location.href = SURVEY_FORM_URL; });
+
+      // Close if user taps outside the box
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) closeConfirm();
+      });
+
+      // Close on Esc (for keyboard/tablet cases)
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && overlay.style.display === "flex") closeConfirm();
+      });
+
+      /* =====================
+         Share button helpers
+      ====================== */
       function buildShareUrl() {
         const url = new URL(window.location.href);
-        url.hash = ""; // remove any #... fragments
-        // If you ever add extra params you don't want to share, remove them here:
-        // url.searchParams.delete("something");
+        url.hash = "";
         return url.toString();
       }
 
@@ -108,7 +230,6 @@
           await navigator.clipboard.writeText(text);
           return true;
         } catch (e) {
-          // Fallback for older browsers / some kiosk modes
           try {
             const ta = document.createElement("textarea");
             ta.value = text;
@@ -127,19 +248,16 @@
       }
 
       async function shareCurrentMap() {
-        // Only allow share after a submission is found (but also safe if clicked early)
         if (!submissionFeature || !submissionFeature.geometry) {
           setStatus("Not ready yet", "We haven't located the submitted address point yet.");
           return;
         }
 
         const shareUrl = buildShareUrl();
-
         const shareText =
           "Here is the map link showing the address location in relation to the proposed roadway project:\n\n" +
           shareUrl;
 
-        // Native share sheet on most phones
         if (navigator.share) {
           try {
             await navigator.share({
@@ -150,37 +268,29 @@
             setStatus("Shared", "Share sheet opened. Choose how you want to send it.");
             return;
           } catch (e) {
-            // user canceled or share failed — fall back to copy
             console.warn("navigator.share failed or canceled:", e);
           }
         }
 
-        // Fallback: copy to clipboard
         const copied = await copyToClipboard(shareUrl);
         if (copied) {
-          setStatus("Link copied", "The link was copied to your clipboard. Paste it into a text or email.");
+          setStatus("Link copied", "The link was copied. Paste it into a text or email.");
         } else {
-          setStatus("Copy failed", "Could not copy automatically. You can manually copy the URL from the address bar.");
+          setStatus("Copy failed", "Could not copy automatically. You can copy the URL from the address bar.");
         }
       }
 
       shareBtn.addEventListener("click", shareCurrentMap);
 
-      // === 1) Load your AGOL Web Map (basemap + reference layers live here) ===
-      const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
-
-      const webmap = new WebMap({
-        portalItem: { id: WEBMAP_ID }
-      });
+      /* =====================
+         WebMap + View
+      ====================== */
+      const webmap = new WebMap({ portalItem: { id: WEBMAP_ID } });
 
       const view = new MapView({
         container: "viewDiv",
         map: webmap
       });
-
-      // === 2) Add ONLY the Survey points layer in code (on top) ===
-      const SURVEY_LAYER_URL =
-        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
       const surveyLayer = new FeatureLayer({
         url: SURVEY_LAYER_URL,
@@ -189,9 +299,6 @@
       });
 
       webmap.add(surveyLayer);
-
-      // === 3) Lock "preferred alignments" extents button to this exact sublayer title ===
-      const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
 
       function findReferenceLayerInWebMap() {
         function flattenLayers(layerCollection, arr = []) {
@@ -205,7 +312,9 @@
         return allLayers.find(l => l.type === "feature" && l.title === REFERENCE_LAYER_TITLE) || null;
       }
 
-      // --- URL params parsing (same as before) ---
+      /* =====================
+         URL params -> whereClause
+      ====================== */
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
       let oid = params.get("oid");
@@ -226,7 +335,9 @@
 
       console.log("Final whereClause:", whereClause);
 
-      // === Keep references to the found submission & graphics ===
+      /* =====================
+         Submission + graphics
+      ====================== */
       let submissionFeature = null;
       let markerGraphic = null;
       let radiusGraphic = null;
@@ -330,13 +441,17 @@
         }
       }
 
-      // === Button wiring ===
+      /* =====================
+         Button wiring
+      ====================== */
       zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
       zoomAddressBtn.addEventListener("click", zoomToSubmissionPoint);
       radius1Btn.addEventListener("click", () => showRadius(1));
       radius5Btn.addEventListener("click", () => showRadius(5));
 
-      // === Locate the submission (same retry approach) ===
+      /* =====================
+         Locate the submission
+      ====================== */
       view.when(async () => {
         if (!whereClause) {
           setStatus("Error", "No valid GlobalID or OBJECTID was passed.");
@@ -367,13 +482,12 @@
             }
 
             await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
-
             clearRadius();
             drawMarker(submissionFeature.geometry);
 
             surveyLayer.definitionExpression = whereClause;
 
-            // Reveal the share button once we have a valid point
+            // Reveal share button once we have a valid point
             shareBtn.classList.remove("hidden");
 
             setStatus("Thank you!", "Your submitted address was successfully located.");
