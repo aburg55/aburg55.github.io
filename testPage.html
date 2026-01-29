@@ -20,7 +20,6 @@
       background: #ffffff;
     }
 
-    /* Mobile bottom sheet */
     #sheet {
       position: fixed;
       left: 12px;
@@ -49,7 +48,6 @@
       word-break: break-word;
     }
 
-    /* Buttons layout */
     #actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -69,7 +67,6 @@
       width: 100%;
     }
 
-    /* Make some buttons span both columns */
     .span-2 {
       grid-column: 1 / -1;
     }
@@ -85,8 +82,12 @@
     <div id="msg">Please wait while we locate your submission.</div>
 
     <div id="actions">
-      <button id="zoomConnector" class="btn span-2">Zoom to Extents of Connector Roadway</button>
-      <button id="zoomAddress" class="btn span-2">Zoom to Address Entered</button>
+      <button id="zoomConnector" class="btn span-2">
+        Zoom to Extents of Preferred Alignments
+      </button>
+      <button id="zoomAddress" class="btn span-2">
+        Zoom to Address Entered
+      </button>
       <button id="radius1" class="btn">Show 1 Mile Radius</button>
       <button id="radius5" class="btn">Show 5 Mile Radius</button>
     </div>
@@ -114,7 +115,6 @@
         msgEl.textContent = msg || "";
       }
 
-      // === 1) Load your AGOL Web Map (basemap + reference layers live here) ===
       const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
 
       const webmap = new WebMap({
@@ -126,7 +126,6 @@
         map: webmap
       });
 
-      // === 2) Add ONLY the Survey points layer in code (on top) ===
       const SURVEY_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
@@ -138,76 +137,52 @@
 
       webmap.add(surveyLayer);
 
-      // === 3) Lock connector-extent button to this exact sublayer title (inside any group) ===
       const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
 
       function findReferenceLayerInWebMap() {
         function flattenLayers(layerCollection, arr = []) {
           layerCollection.forEach(l => {
             arr.push(l);
-            if (l.layers && l.layers.length) {
-              flattenLayers(l.layers, arr); // handles GroupLayer
-            }
+            if (l.layers && l.layers.length) flattenLayers(l.layers, arr);
           });
           return arr;
         }
 
         const allLayers = flattenLayers(webmap.layers);
-
         return allLayers.find(
           l => l.type === "feature" && l.title === REFERENCE_LAYER_TITLE
         ) || null;
       }
 
-      // --- URL params parsing (same as before) ---
       const params = new URLSearchParams(window.location.search);
       let gid = params.get("gid");
       let oid = params.get("oid");
 
-      // Prepare a properly normalized GlobalID for querying
       let gidForWhere = null;
-
       if (gid) {
-        gid = decodeURIComponent(gid).trim();
-        gid = gid.replace(/^'+|'+$/g, "");
-
-        const core = gid.replace(/^{/, "").replace(/}$/, "").trim();
-        const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
-
-        if (!looksLikePlaceholder(core) && core.length >= 32) {
-          gidForWhere = `{${core}}`;
-        }
+        gid = decodeURIComponent(gid).trim().replace(/^'+|'+$/g, "");
+        const core = gid.replace(/^{|}$/g, "");
+        if (core.length >= 32) gidForWhere = `{${core}}`;
       }
 
       const oidNum = oid ? Number(oid) : null;
-      let whereClause = null;
+      const whereClause = gidForWhere
+        ? `globalid='${gidForWhere}'`
+        : Number.isFinite(oidNum)
+          ? `objectid=${oidNum}`
+          : null;
 
-      if (gidForWhere) {
-        whereClause = `globalid='${gidForWhere}'`;
-      } else if (Number.isFinite(oidNum)) {
-        whereClause = `objectid=${oidNum}`;
-      }
-
-      console.log("Final whereClause:", whereClause);
-
-      // === Keep references to the found submission & graphics ===
       let submissionFeature = null;
       let markerGraphic = null;
       let radiusGraphic = null;
 
       function clearRadius() {
-        if (radiusGraphic) {
-          view.graphics.remove(radiusGraphic);
-          radiusGraphic = null;
-        }
+        if (radiusGraphic) view.graphics.remove(radiusGraphic);
+        radiusGraphic = null;
       }
 
       function drawMarker(point) {
-        if (markerGraphic) {
-          view.graphics.remove(markerGraphic);
-          markerGraphic = null;
-        }
-
+        if (markerGraphic) view.graphics.remove(markerGraphic);
         markerGraphic = new Graphic({
           geometry: point,
           symbol: {
@@ -218,148 +193,102 @@
             outline: { color: [0, 0, 0, 1], width: 2 }
           }
         });
-
         view.graphics.add(markerGraphic);
       }
 
       async function zoomToSubmissionPoint() {
-        if (!submissionFeature || !submissionFeature.geometry) {
-          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
+        if (!submissionFeature) {
+          setStatus("Not ready yet", "Address point not found yet.");
           return;
         }
-
-        clearRadius(); // optional: keep map clean when zooming to the point
+        clearRadius();
         drawMarker(submissionFeature.geometry);
-
         await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
         setStatus("Address located", "Zoomed to the address you entered.");
       }
 
       async function showRadius(miles) {
-        if (!submissionFeature || !submissionFeature.geometry) {
-          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
+        if (!submissionFeature) {
+          setStatus("Not ready yet", "Address point not found yet.");
           return;
         }
 
-        const pt = submissionFeature.geometry;
+        const buffer = geometryEngine.geodesicBuffer(
+          submissionFeature.geometry,
+          miles,
+          "miles"
+        );
 
-        // Geodesic buffer in miles (more accurate than planar)
-        const bufferPoly = geometryEngine.geodesicBuffer(pt, miles, "miles");
-
-        clearRadius(); // replace any prior ring
-        drawMarker(pt);
+        clearRadius();
+        drawMarker(submissionFeature.geometry);
 
         radiusGraphic = new Graphic({
-          geometry: bufferPoly,
+          geometry: buffer,
           symbol: {
             type: "simple-fill",
-            color: [26, 115, 232, 0.12],      // subtle transparent fill
+            color: [26, 115, 232, 0.12],
             outline: { color: [26, 115, 232, 0.9], width: 2 }
           }
         });
 
         view.graphics.add(radiusGraphic);
-
-        await view.goTo(bufferPoly.extent.expand(1.2));
-        setStatus("Radius shown", `${miles} mile radius displayed around the submitted address.`);
+        await view.goTo(buffer.extent.expand(1.2));
+        setStatus("Radius shown", `${miles} mile radius displayed.`);
       }
 
       async function zoomToReferenceLayerExtent() {
-        try {
-          setStatus("Connector roadway", "Calculating extents…");
+        setStatus("Preferred alignments", "Calculating extents…");
 
-          await webmap.load();
-          const referenceLayer = findReferenceLayerInWebMap();
-
-          if (!referenceLayer) {
-            setStatus("Error", `Could not find the layer titled "${REFERENCE_LAYER_TITLE}" in the Web Map.`);
-            return;
-          }
-
-          await referenceLayer.when();
-
-          let ext = referenceLayer.fullExtent;
-
-          if (!ext) {
-            const q = referenceLayer.createQuery();
-            q.where = "1=1";
-            q.returnGeometry = false;
-            const extRes = await referenceLayer.queryExtent(q);
-            ext = extRes?.extent || null;
-          }
-
-          if (!ext) {
-            setStatus("Error", "Could not determine layer extents.");
-            return;
-          }
-
-          clearRadius(); // optional
-          await view.goTo(ext.expand(1.15));
-          setStatus("Connector roadway", "Zoomed to roadway extents.");
-        } catch (e) {
-          console.error(e);
-          setStatus("Error", "Could not zoom to extents.");
-        }
-      }
-
-      // === Button wiring ===
-      zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
-      zoomAddressBtn.addEventListener("click", zoomToSubmissionPoint);
-      radius1Btn.addEventListener("click", () => showRadius(1));
-      radius5Btn.addEventListener("click", () => showRadius(5));
-
-      // === Locate the submission (same retry approach) ===
-      view.when(async () => {
-
-        if (!whereClause) {
-          setStatus("Error", "No valid GlobalID or OBJECTID was passed.");
+        const layer = findReferenceLayerInWebMap();
+        if (!layer) {
+          setStatus("Error", "Preferred alignment layer not found.");
           return;
         }
 
-        await surveyLayer.when();
+        await layer.when();
+        let ext = layer.fullExtent;
 
-        const MAX_ATTEMPTS = 14;
-        const RETRY_DELAY = 700;
+        if (!ext) {
+          const res = await layer.queryExtent({ where: "1=1" });
+          ext = res.extent;
+        }
 
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        clearRadius();
+        await view.goTo(ext.expand(1.15));
+        setStatus("Preferred alignments", "Zoomed to preferred alignment extents.");
+      }
 
-          setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
-          console.log("Query attempt WHERE:", whereClause);
+      zoomConnectorBtn.onclick = zoomToReferenceLayerExtent;
+      zoomAddressBtn.onclick = zoomToSubmissionPoint;
+      radius1Btn.onclick = () => showRadius(1);
+      radius5Btn.onclick = () => showRadius(5);
 
+      view.when(async () => {
+        if (!whereClause) {
+          setStatus("Error", "No valid GlobalID or OBJECTID provided.");
+          return;
+        }
+
+        for (let i = 0; i < 14; i++) {
           const res = await surveyLayer.queryFeatures({
             where: whereClause,
             returnGeometry: true,
             outFields: ["*"]
           });
 
-          if (res.features && res.features.length > 0) {
-
-            const feature = res.features[0];
-            submissionFeature = feature;
-
-            if (!feature.geometry || feature.geometry.type !== "point") {
-              setStatus("Submitted", "Address recorded, but no point geometry exists.");
-              return;
-            }
-
-            // Zoom to the point initially
-            await view.goTo({ target: feature.geometry, zoom: 18 });
-
-            // Show marker
-            clearRadius();
-            drawMarker(feature.geometry);
-
-            // Filter to show only that submission
+          if (res.features.length) {
+            submissionFeature = res.features[0];
+            drawMarker(submissionFeature.geometry);
+            await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
             surveyLayer.definitionExpression = whereClause;
-
             setStatus("Thank you!", "Your submitted address was successfully located.");
             return;
           }
 
-          await new Promise(r => setTimeout(r, RETRY_DELAY));
+          await new Promise(r => setTimeout(r, 700));
         }
 
-        setStatus("Still processing", "If you just submitted, try again in a moment, or reload the page.");
+        setStatus("Still processing", "If you just submitted, try again shortly.");
       });
 
     });
@@ -367,4 +296,3 @@
 
 </body>
 </html>
-
