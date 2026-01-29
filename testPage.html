@@ -32,7 +32,7 @@
       padding: 14px;
       box-shadow: 0 10px 24px rgba(0,0,0,0.25);
       backdrop-filter: blur(8px);
-      max-height: 30vh;
+      max-height: 34vh;
       overflow: auto;
     }
 
@@ -49,10 +49,10 @@
       word-break: break-word;
     }
 
-    /* All bottom buttons blue */
+    /* Buttons layout */
     #actions {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
 
@@ -66,6 +66,12 @@
       background: #1a73e8;
       color: #ffffff;
       box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      width: 100%;
+    }
+
+    /* Make some buttons span both columns */
+    .span-2 {
+      grid-column: 1 / -1;
     }
   </style>
 </head>
@@ -79,8 +85,10 @@
     <div id="msg">Please wait while we locate your submission.</div>
 
     <div id="actions">
-      <button id="zoomConnector" class="btn">View Extents of Connector Roadway</button>
-      <button id="refresh" class="btn">Refresh</button>
+      <button id="zoomConnector" class="btn span-2">Zoom to Extents of Connector Roadway</button>
+      <button id="zoomAddress" class="btn span-2">Zoom to Address Entered</button>
+      <button id="radius1" class="btn">Show 1 Mile Radius</button>
+      <button id="radius5" class="btn">Show 5 Mile Radius</button>
     </div>
   </div>
 
@@ -88,20 +96,23 @@
     require([
       "esri/WebMap",
       "esri/views/MapView",
-      "esri/layers/FeatureLayer"
-    ], function (WebMap, MapView, FeatureLayer) {
+      "esri/layers/FeatureLayer",
+      "esri/geometry/geometryEngine",
+      "esri/Graphic"
+    ], function (WebMap, MapView, FeatureLayer, geometryEngine, Graphic) {
 
       const titleEl = document.getElementById("title");
       const msgEl = document.getElementById("msg");
+
       const zoomConnectorBtn = document.getElementById("zoomConnector");
-      const refreshBtn = document.getElementById("refresh");
+      const zoomAddressBtn = document.getElementById("zoomAddress");
+      const radius1Btn = document.getElementById("radius1");
+      const radius5Btn = document.getElementById("radius5");
 
       function setStatus(title, msg) {
         titleEl.textContent = title || "";
         msgEl.textContent = msg || "";
       }
-
-      refreshBtn.addEventListener("click", () => location.reload());
 
       // === 1) Load your AGOL Web Map (basemap + reference layers live here) ===
       const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
@@ -158,11 +169,9 @@
 
       if (gid) {
         gid = decodeURIComponent(gid).trim();
-
         gid = gid.replace(/^'+|'+$/g, "");
 
         const core = gid.replace(/^{/, "").replace(/}$/, "").trim();
-
         const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
 
         if (!looksLikePlaceholder(core) && core.length >= 32) {
@@ -171,7 +180,6 @@
       }
 
       const oidNum = oid ? Number(oid) : null;
-
       let whereClause = null;
 
       if (gidForWhere) {
@@ -182,19 +190,89 @@
 
       console.log("Final whereClause:", whereClause);
 
+      // === Keep references to the found submission & graphics ===
+      let submissionFeature = null;
+      let markerGraphic = null;
+      let radiusGraphic = null;
+
+      function clearRadius() {
+        if (radiusGraphic) {
+          view.graphics.remove(radiusGraphic);
+          radiusGraphic = null;
+        }
+      }
+
+      function drawMarker(point) {
+        if (markerGraphic) {
+          view.graphics.remove(markerGraphic);
+          markerGraphic = null;
+        }
+
+        markerGraphic = new Graphic({
+          geometry: point,
+          symbol: {
+            type: "simple-marker",
+            style: "star",
+            color: [255, 230, 0, 1],
+            size: 26,
+            outline: { color: [0, 0, 0, 1], width: 2 }
+          }
+        });
+
+        view.graphics.add(markerGraphic);
+      }
+
+      async function zoomToSubmissionPoint() {
+        if (!submissionFeature || !submissionFeature.geometry) {
+          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
+          return;
+        }
+
+        clearRadius(); // optional: keep map clean when zooming to the point
+        drawMarker(submissionFeature.geometry);
+
+        await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
+        setStatus("Address located", "Zoomed to the address you entered.");
+      }
+
+      async function showRadius(miles) {
+        if (!submissionFeature || !submissionFeature.geometry) {
+          setStatus("Not ready yet", "We haven't located the submitted address point yet.");
+          return;
+        }
+
+        const pt = submissionFeature.geometry;
+
+        // Geodesic buffer in miles (more accurate than planar)
+        const bufferPoly = geometryEngine.geodesicBuffer(pt, miles, "miles");
+
+        clearRadius(); // replace any prior ring
+        drawMarker(pt);
+
+        radiusGraphic = new Graphic({
+          geometry: bufferPoly,
+          symbol: {
+            type: "simple-fill",
+            color: [26, 115, 232, 0.12],      // subtle transparent fill
+            outline: { color: [26, 115, 232, 0.9], width: 2 }
+          }
+        });
+
+        view.graphics.add(radiusGraphic);
+
+        await view.goTo(bufferPoly.extent.expand(1.2));
+        setStatus("Radius shown", `${miles} mile radius displayed around the submitted address.`);
+      }
+
       async function zoomToReferenceLayerExtent() {
         try {
           setStatus("Connector roadway", "Calculating extents…");
 
-          // Ensure webmap is loaded before searching its layers
           await webmap.load();
-
           const referenceLayer = findReferenceLayerInWebMap();
+
           if (!referenceLayer) {
-            setStatus(
-              "Error",
-              `Could not find the layer titled "${REFERENCE_LAYER_TITLE}" in the Web Map.`
-            );
+            setStatus("Error", `Could not find the layer titled "${REFERENCE_LAYER_TITLE}" in the Web Map.`);
             return;
           }
 
@@ -215,6 +293,7 @@
             return;
           }
 
+          clearRadius(); // optional
           await view.goTo(ext.expand(1.15));
           setStatus("Connector roadway", "Zoomed to roadway extents.");
         } catch (e) {
@@ -223,8 +302,13 @@
         }
       }
 
+      // === Button wiring ===
       zoomConnectorBtn.addEventListener("click", zoomToReferenceLayerExtent);
+      zoomAddressBtn.addEventListener("click", zoomToSubmissionPoint);
+      radius1Btn.addEventListener("click", () => showRadius(1));
+      radius5Btn.addEventListener("click", () => showRadius(5));
 
+      // === Locate the submission (same retry approach) ===
       view.when(async () => {
 
         if (!whereClause) {
@@ -240,7 +324,6 @@
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 
           setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
-
           console.log("Query attempt WHERE:", whereClause);
 
           const res = await surveyLayer.queryFeatures({
@@ -252,32 +335,19 @@
           if (res.features && res.features.length > 0) {
 
             const feature = res.features[0];
+            submissionFeature = feature;
 
             if (!feature.geometry || feature.geometry.type !== "point") {
               setStatus("Submitted", "Address recorded, but no point geometry exists.");
               return;
             }
 
-            await view.goTo({
-              target: feature.geometry,
-              zoom: 18
-            });
+            // Zoom to the point initially
+            await view.goTo({ target: feature.geometry, zoom: 18 });
 
-            view.graphics.removeAll();
-
-            view.graphics.add({
-              geometry: feature.geometry,
-              symbol: {
-                type: "simple-marker",
-                style: "star",
-                color: [255, 230, 0, 1],
-                size: 26,
-                outline: {
-                  color: [0, 0, 0, 1],
-                  width: 2
-                }
-              }
-            });
+            // Show marker
+            clearRadius();
+            drawMarker(feature.geometry);
 
             // Filter to show only that submission
             surveyLayer.definitionExpression = whereClause;
@@ -289,7 +359,7 @@
           await new Promise(r => setTimeout(r, RETRY_DELAY));
         }
 
-        setStatus("Still processing", "If you just submitted, tap Refresh once.");
+        setStatus("Still processing", "If you just submitted, try again in a moment, or reload the page.");
       });
 
     });
