@@ -119,10 +119,6 @@
       const SURVEY_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
 
-      // This was your previous connector layer URL; now we use it to FIND that layer inside the WebMap
-      const REFERENCE_LAYER_URL =
-        "https://services1.arcgis.com/MEvzxYGCHO108ZxL/ArcGIS/rest/services/New_Alignments_N211_and_N223/FeatureServer/0";
-
       const surveyLayer = new FeatureLayer({
         url: SURVEY_LAYER_URL,
         outFields: ["*"],
@@ -130,6 +126,27 @@
       });
 
       webmap.add(surveyLayer);
+
+      // === 3) Lock connector-extent button to this exact sublayer title (inside any group) ===
+      const REFERENCE_LAYER_TITLE = "N3-3-4 Alignment Lines";
+
+      function findReferenceLayerInWebMap() {
+        function flattenLayers(layerCollection, arr = []) {
+          layerCollection.forEach(l => {
+            arr.push(l);
+            if (l.layers && l.layers.length) {
+              flattenLayers(l.layers, arr); // handles GroupLayer
+            }
+          });
+          return arr;
+        }
+
+        const allLayers = flattenLayers(webmap.layers);
+
+        return allLayers.find(
+          l => l.type === "feature" && l.title === REFERENCE_LAYER_TITLE
+        ) || null;
+      }
 
       // --- URL params parsing (same as before) ---
       const params = new URLSearchParams(window.location.search);
@@ -141,7 +158,9 @@
 
       if (gid) {
         gid = decodeURIComponent(gid).trim();
+
         gid = gid.replace(/^'+|'+$/g, "");
+
         const core = gid.replace(/^{/, "").replace(/}$/, "").trim();
 
         const looksLikePlaceholder = (s) => s && (s.includes("${") || s.includes("$("));
@@ -163,36 +182,19 @@
 
       console.log("Final whereClause:", whereClause);
 
-      // === Helper: find connector layer inside the WebMap ===
-      function findReferenceLayerInWebMap() {
-        // webmap.layers includes only *top-level* operational layers
-        // if you have group layers, we’ll also search recursively.
-        function flattenLayers(layerCollection, arr = []) {
-          layerCollection.forEach(l => {
-            arr.push(l);
-            if (l.layers && l.layers.length) flattenLayers(l.layers, arr); // GroupLayer
-          });
-          return arr;
-        }
-
-        const all = flattenLayers(webmap.layers);
-
-        // Try to match by URL first (most reliable)
-        const byUrl = all.find(l => l.url && l.url.toLowerCase() === REFERENCE_LAYER_URL.toLowerCase());
-        if (byUrl) return byUrl;
-
-        // Fallback: first FeatureLayer in the web map (so the button doesn't hard-fail)
-        const firstFL = all.find(l => l.type === "feature" && l.url);
-        return firstFL || null;
-      }
-
       async function zoomToReferenceLayerExtent() {
         try {
           setStatus("Connector roadway", "Calculating extents…");
 
+          // Ensure webmap is loaded before searching its layers
+          await webmap.load();
+
           const referenceLayer = findReferenceLayerInWebMap();
           if (!referenceLayer) {
-            setStatus("Error", "Could not find a reference layer in the Web Map.");
+            setStatus(
+              "Error",
+              `Could not find the layer titled "${REFERENCE_LAYER_TITLE}" in the Web Map.`
+            );
             return;
           }
 
@@ -238,6 +240,7 @@
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 
           setStatus("Finding your submission…", `Attempt ${attempt}/${MAX_ATTEMPTS}`);
+
           console.log("Query attempt WHERE:", whereClause);
 
           const res = await surveyLayer.queryFeatures({
@@ -276,7 +279,7 @@
               }
             });
 
-            // Optional: filter the survey layer to show only that submission
+            // Filter to show only that submission
             surveyLayer.definitionExpression = whereClause;
 
             setStatus("Thank you!", "Your submitted address was successfully located.");
