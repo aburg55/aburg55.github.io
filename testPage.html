@@ -45,11 +45,11 @@
       right: 12px;
       bottom: calc(12px + env(safe-area-inset-bottom));
       z-index: 9999;
-      background: rgba(255,255,255,0.95);
+      background: rgba(255, 255, 255, 0.90); /* slightly more transparent */
       border-radius: 16px;
       padding: 14px;
       box-shadow: 0 10px 24px rgba(0,0,0,0.25);
-      backdrop-filter: blur(8px);
+      backdrop-filter: blur(10px);
       max-height: 40vh;
       overflow: auto;
     }
@@ -72,7 +72,13 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    #msg { font-size: 14px; opacity: 0.9; margin-bottom: 10px; word-break: break-word; line-height: 1.35; }
+    #msg {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 10px;
+      word-break: break-word;
+      line-height: 1.35;
+    }
 
     /* Small inline link (not a big button) */
     #inlineLinks {
@@ -93,8 +99,13 @@
     }
     .hidden { display: none; }
 
-    #actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    #actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
 
+    /* === Primary buttons: translucent blue === */
     .btn {
       border: 0;
       border-radius: 12px;
@@ -102,16 +113,32 @@
       font-weight: 700;
       font-size: 15px;
       cursor: pointer;
-      background: #1a73e8;
+
+      background: rgba(26, 115, 232, 0.85); /* translucent blue */
       color: #ffffff;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+
+      backdrop-filter: blur(4px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.18);
       width: 100%;
+      transition: transform 0.06s ease;
+    }
+
+    /* === Secondary action (Share): white glass === */
+    .btnSecondaryAction {
+      background: rgba(255, 255, 255, 0.88);
+      color: #1a73e8;
+      backdrop-filter: blur(6px);
     }
 
     .btn:disabled {
       opacity: 0.45;
       cursor: not-allowed;
       box-shadow: none;
+      backdrop-filter: none;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
     }
 
     .span-2 { grid-column: 1 / -1; }
@@ -127,6 +154,7 @@
       justify-content: center;
       padding: 18px;
     }
+
     #confirmBox {
       width: min(420px, 100%);
       background: rgba(255,255,255,0.98);
@@ -135,14 +163,18 @@
       padding: 16px;
       backdrop-filter: blur(8px);
     }
+
     #confirmTitle { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
     #confirmText { font-size: 14px; opacity: 0.9; margin-bottom: 14px; line-height: 1.35; }
+
     #confirmActions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
     .btnSecondary {
       background: #ffffff;
       color: #1a73e8;
       border: 2px solid rgba(26,115,232,0.35);
       box-shadow: none;
+      backdrop-filter: none;
     }
 
     /* === Info modal === */
@@ -156,6 +188,7 @@
       justify-content: center;
       padding: 18px;
     }
+
     #infoBox {
       width: min(520px, 100%);
       background: rgba(255,255,255,0.98);
@@ -164,6 +197,7 @@
       padding: 16px;
       backdrop-filter: blur(8px);
     }
+
     #infoTitle { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
     #infoText { font-size: 14px; opacity: 0.92; line-height: 1.4; }
     #infoActions { margin-top: 14px; display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -227,7 +261,9 @@
       <button id="zoomAddress" class="btn span-2" disabled>Zoom to Address Entered</button>
       <button id="radius1" class="btn" disabled>Show 1 Mile Radius</button>
       <button id="radius5" class="btn" disabled>Show 5 Mile Radius</button>
-      <button id="shareBtn" class="btn span-2" disabled>Share This Map</button>
+
+      <!-- Share = secondary (white glass) -->
+      <button id="shareBtn" class="btn btnSecondaryAction span-2" disabled>Share This Map</button>
     </div>
   </div>
 
@@ -248,10 +284,18 @@
     <div id="infoBox">
       <div id="infoTitle">What am I looking at?</div>
       <div id="infoText">
-        <div style="margin-bottom:10px;"><b>Yellow Dot wiht Black Circle</b> = the address you entered</div>
-        <div style="margin-bottom:10px;"><b>Blue circle</b> = 1-mile or 5-mile radius from your address</div>
-        <div style="margin-bottom:10px;"><b>Preferred alignments</b> = proposed roadway alignment options for this project</div>
-        <div>Tip: Tap <b>Share This Map</b> to send the link to yourself or someone else.</div>
+        <div style="margin-bottom:10px;">
+          <b>Yellow dot with black outline</b> = the address you entered
+        </div>
+        <div style="margin-bottom:10px;">
+          <b>Blue circle</b> = 1-mile or 5-mile radius from your address
+        </div>
+        <div style="margin-bottom:10px;">
+          <b>Preferred alignments</b> = proposed roadway alignment options for this project
+        </div>
+        <div>
+          Tip: Use <b>Share This Map</b> to send the link to yourself or someone else.
+        </div>
       </div>
       <div id="infoActions">
         <button id="infoClose" class="btn">Close</button>
@@ -274,11 +318,11 @@
       ====================== */
       const SURVEY_FORM_URL = "https://aburg55.github.io/survey.html";
       const WEBMAP_ID = "4018d6b31a244c28b5b18ed23ab48bf7";
+
       const SURVEY_LAYER_URL =
         "https://services1.arcgis.com/MEvzxYGCHO108ZxL/arcgis/rest/services/survey123_d4f003f5be254f9bb5a8d92a281f9e13/FeatureServer/0";
-      const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
 
-      // ✅ Your Survey123 address field name (actual field name, not alias)
+      const REFERENCE_LAYER_TITLE = "N3-2-4 Alignment";
       const ADDRESS_FIELD = "enter_your_address_here";
 
       /* =====================
@@ -294,7 +338,6 @@
       const radius5Btn = document.getElementById("radius5");
       const shareBtn = document.getElementById("shareBtn");
       const hideRadiusLink = document.getElementById("hideRadiusLink");
-
       const toastEl = document.getElementById("toast");
 
       function setStatus(title, msg, spinning=false) {
@@ -339,7 +382,9 @@
       confirmGo.addEventListener("click", () => { window.location.href = SURVEY_FORM_URL; });
 
       confirmOverlay.addEventListener("click", (e) => { if (e.target === confirmOverlay) closeConfirm(); });
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && confirmOverlay.style.display === "flex") closeConfirm(); });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && confirmOverlay.style.display === "flex") closeConfirm();
+      });
 
       /* =====================
          Info modal logic
@@ -354,7 +399,9 @@
       infoBtn.addEventListener("click", openInfo);
       infoClose.addEventListener("click", closeInfo);
       infoOverlay.addEventListener("click", (e) => { if (e.target === infoOverlay) closeInfo(); });
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && infoOverlay.style.display === "flex") closeInfo(); });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && infoOverlay.style.display === "flex") closeInfo();
+      });
 
       /* =====================
          Share helpers
@@ -438,6 +485,8 @@
       if (gidForWhere) whereClause = `globalid='${gidForWhere}'`;
       else if (Number.isFinite(oidNum)) whereClause = `objectid=${oidNum}`;
 
+      console.log("Final whereClause:", whereClause);
+
       /* =====================
          Submission + graphics
       ====================== */
@@ -465,17 +514,16 @@
           geometry: point,
           symbol: {
             type: "simple-marker",
-            style: "star",
-            color: [255, 230, 0, 1],
-            size: 26,
-            outline: { color: [0, 0, 0, 1], width: 2 }
+            style: "circle",
+            color: [255, 230, 0, 1],  /* yellow */
+            size: 14,
+            outline: { color: [0, 0, 0, 1], width: 2 } /* black outline */
           }
         });
 
         view.graphics.add(markerGraphic);
       }
 
-      // ✅ Updated to use your actual field name, with nicer wording
       function getReadableLocation(feature) {
         const a = feature?.attributes || {};
         const addr = a[ADDRESS_FIELD];
@@ -484,7 +532,6 @@
           return `Address entered: ${addr.trim()}`;
         }
 
-        // Fallback to lat/long if address field is empty
         try {
           const pt = feature.geometry;
           const g = (pt.spatialReference && pt.spatialReference.isWebMercator)
@@ -506,7 +553,6 @@
 
         drawMarker(submissionFeature.geometry);
         await view.goTo({ target: submissionFeature.geometry, zoom: 18 });
-
         setStatus("Address located", getReadableLocation(submissionFeature));
       }
 
@@ -656,7 +702,6 @@
             surveyLayer.definitionExpression = whereClause;
 
             setStatus("Address located", getReadableLocation(submissionFeature), false);
-
             showToastOncePerSession("Tip: Tap 🔍 to enter another address.");
 
             return;
