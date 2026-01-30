@@ -5,129 +5,189 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Sanitary Sewer Capacity Scenarios</title>
 
-  <!-- ArcGIS Maps SDK for JavaScript (CDN) -->
   <link rel="stylesheet" href="https://js.arcgis.com/4.34/esri/themes/light/main.css" />
   <script src="https://js.arcgis.com/4.34/"></script>
+
+  <style>
+    html, body, #viewDiv { height: 100%; width: 100%; margin: 0; padding: 0; }
+    #topbar {
+      position: absolute;
+      top: 10px; left: 10px;
+      z-index: 10;
+      background: white;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.15);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-family: Arial, sans-serif;
+    }
+    button { cursor: pointer; }
+  </style>
 </head>
 
-<body style="margin:0;">
-  <div id="viewDiv" style="height:100vh;width:100vw;"></div>
+<body>
+  <div id="topbar">
+    <button id="signInBtn">Sign in</button>
+    <button id="signOutBtn" style="display:none;">Sign out</button>
+    <span id="status">Not signed in</span>
+  </div>
+  <div id="viewDiv"></div>
 
   <script>
     require([
+      "esri/config",
+      "esri/portal/Portal",
+      "esri/identity/OAuthInfo",
+      "esri/identity/IdentityManager",
       "esri/WebMap",
       "esri/views/MapView",
-
       "esri/widgets/LayerList",
       "esri/widgets/Legend",
       "esri/widgets/Measurement",
       "esri/widgets/Print",
       "esri/widgets/Expand"
-    ], function(
+    ], function (
+      esriConfig, Portal, OAuthInfo, esriId,
       WebMap, MapView,
       LayerList, Legend, Measurement, Print, Expand
     ) {
 
-      // ✅ Your Web Map item ID
+      // ✅ Your org-only Web Map item id
       const WEBMAP_ID = "7bd7b027df024f7c9b8c6b9be002bf3a";
 
-      // ✅ EXACT title of the group layer that contains your mutually-exclusive layers
+      // ✅ Group layer title to keep mutually exclusive
       const EXCLUSIVE_GROUP_TITLE = "Sanitary Sewer Capacity Scenarios";
 
-      const webmap = new WebMap({
-        portalItem: { id: WEBMAP_ID }
+      // ✅ Your ArcGIS Online OAuth app client id
+      const CLIENT_ID = "YOUR_CLIENT_ID_HERE";
+
+      // Usually this is correct:
+      // If your org has a custom domain, set it here (e.g., https://yourorg.maps.arcgis.com)
+      const PORTAL_URL = "https://emht.maps.arcgis.com";
+
+      esriConfig.portalUrl = PORTAL_URL;
+
+      const info = new OAuthInfo({
+        appId: CLIENT_ID,
+        portalUrl: PORTAL_URL,
+        popup: true
       });
+      esriId.registerOAuthInfos([info]);
 
-      const view = new MapView({
-        container: "viewDiv",
-        map: webmap
-      });
+      const statusEl = document.getElementById("status");
+      const signInBtn = document.getElementById("signInBtn");
+      const signOutBtn = document.getElementById("signOutBtn");
 
-      // --- Widgets ------------------------------------------------------------
+      let view;
 
-      const layerList = new LayerList({ view });
-      const legend = new Legend({ view });
-      const measurement = new Measurement({ view });
-
-      // Print requires a print service URL
-      const print = new Print({
-        view,
-        printServiceUrl:
-          "https://utility.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task"
-      });
-
-      // Collapsible panels
-      const layerExpand = new Expand({
-        view,
-        content: layerList,
-        expanded: false
-      });
-
-      const legendExpand = new Expand({
-        view,
-        content: legend,
-        expanded: false
-      });
-
-      const measureExpand = new Expand({
-        view,
-        content: measurement,
-        expanded: false
-      });
-
-      const printExpand = new Expand({
-        view,
-        content: print,
-        expanded: false
-      });
-
-      // Add to UI (stacked top-left)
-      view.ui.add(layerExpand, "top-left");
-      view.ui.add(legendExpand, "top-left");
-      view.ui.add(measureExpand, "top-left");
-      view.ui.add(printExpand, "top-left");
-
-      // --- Enforce "one layer visible at a time" inside the group -------------
-      function enforceExclusiveVisibility(groupLayer) {
-        // When any child layer is turned on, turn the others off.
-        groupLayer.layers.forEach((child) => {
-          child.watch("visible", (isVisible) => {
-            if (!isVisible) return;
-            groupLayer.layers.forEach((other) => {
-              if (other !== child) other.visible = false;
-            });
-          });
-        });
+      function setSignedInUI(username) {
+        statusEl.textContent = `Signed in as ${username}`;
+        signInBtn.style.display = "none";
+        signOutBtn.style.display = "inline-block";
       }
 
-      view.when(async () => {
-        await webmap.load();
-        await webmap.when();
+      function setSignedOutUI() {
+        statusEl.textContent = "Not signed in";
+        signInBtn.style.display = "inline-block";
+        signOutBtn.style.display = "none";
+      }
 
-        // Find your group layer by title
+      async function loadMap() {
+        const webmap = new WebMap({ portalItem: { id: WEBMAP_ID } });
+
+        view = new MapView({
+          container: "viewDiv",
+          map: webmap
+        });
+
+        const layerList = new LayerList({ view });
+        const legend = new Legend({ view });
+        const measurement = new Measurement({ view });
+
+        const print = new Print({
+          view,
+          printServiceUrl:
+            "https://utility.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task"
+        });
+
+        view.ui.add(new Expand({ view, content: layerList }), "top-left");
+        view.ui.add(new Expand({ view, content: legend }), "top-left");
+        view.ui.add(new Expand({ view, content: measurement }), "top-left");
+        view.ui.add(new Expand({ view, content: print }), "top-left");
+
+        function enforceExclusiveVisibility(groupLayer) {
+          groupLayer.layers.forEach((child) => {
+            child.watch("visible", (isVisible) => {
+              if (!isVisible) return;
+              groupLayer.layers.forEach((other) => {
+                if (other !== child) other.visible = false;
+              });
+            });
+          });
+        }
+
+        await view.when();
+        await webmap.load();
+
         const groupLayer = webmap.allLayers.find((lyr) =>
           lyr.type === "group" && lyr.title === EXCLUSIVE_GROUP_TITLE
         );
 
-        if (!groupLayer) {
-          console.warn(
-            `Group layer titled "${EXCLUSIVE_GROUP_TITLE}" not found. ` +
-            "Double-check the group layer title in your Web Map."
-          );
-          return;
+        if (groupLayer) {
+          const visibleChild = groupLayer.layers.find(l => l.visible);
+          if (!visibleChild && groupLayer.layers.length) {
+            groupLayer.layers.getItemAt(0).visible = true;
+          }
+          enforceExclusiveVisibility(groupLayer);
+        } else {
+          console.warn(`Group layer "${EXCLUSIVE_GROUP_TITLE}" not found.`);
         }
+      }
 
-        // Ensure at least one child is visible (nice UX)
-        const visibleChild = groupLayer.layers.find(l => l.visible);
-        if (!visibleChild && groupLayer.layers.length) {
-          groupLayer.layers.getItemAt(0).visible = true;
+      async function trySilentSignIn() {
+        try {
+          // If user already has a session, this will succeed without prompting.
+          const credential = await esriId.checkSignInStatus(PORTAL_URL + "/sharing");
+          // Load portal to get username
+          const portal = new Portal();
+          portal.authMode = "immediate";
+          await portal.load();
+          setSignedInUI(portal.user.username);
+          await loadMap();
+        } catch (e) {
+          setSignedOutUI();
+          console.log("Not signed in (silent).", e);
         }
+      }
 
-        enforceExclusiveVisibility(groupLayer);
+      signInBtn.addEventListener("click", async () => {
+        try {
+          await esriId.getCredential(PORTAL_URL + "/sharing");
+          const portal = new Portal();
+          portal.authMode = "immediate";
+          await portal.load();
+          setSignedInUI(portal.user.username);
+          await loadMap();
+        } catch (e) {
+          console.error("Sign-in failed:", e);
+          alert("Sign-in failed. Check your OAuth app Client ID and Redirect URIs.");
+        }
       });
 
+      signOutBtn.addEventListener("click", async () => {
+        esriId.destroyCredentials();
+        setSignedOutUI();
+        if (view) {
+          view.destroy();
+          view = null;
+        }
+      });
+
+      // On page load, attempt silent sign-in
+      trySilentSignIn();
     });
   </script>
 </body>
 </html>
-
