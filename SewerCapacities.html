@@ -1,1 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sanitary Sewer Capacity Scenarios</title>
+
+  <!-- ArcGIS Maps SDK for JavaScript (CDN) -->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.34/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.34/"></script>
+</head>
+
+<body style="margin:0;">
+  <div id="viewDiv" style="height:100vh;width:100vw;"></div>
+
+  <script>
+    require([
+      "esri/WebMap",
+      "esri/views/MapView",
+
+      "esri/widgets/LayerList",
+      "esri/widgets/Legend",
+      "esri/widgets/Measurement",
+      "esri/widgets/Print",
+      "esri/widgets/Expand"
+    ], function(
+      WebMap, MapView,
+      LayerList, Legend, Measurement, Print, Expand
+    ) {
+
+      // ✅ Your Web Map item ID
+      const WEBMAP_ID = "7bd7b027df024f7c9b8c6b9be002bf3a";
+
+      // ✅ EXACT title of the group layer that contains your mutually-exclusive layers
+      const EXCLUSIVE_GROUP_TITLE = "Sanitary Sewer Capacity Scenarios";
+
+      const webmap = new WebMap({
+        portalItem: { id: WEBMAP_ID }
+      });
+
+      const view = new MapView({
+        container: "viewDiv",
+        map: webmap
+      });
+
+      // --- Widgets ------------------------------------------------------------
+
+      const layerList = new LayerList({ view });
+      const legend = new Legend({ view });
+      const measurement = new Measurement({ view });
+
+      // Print requires a print service URL
+      const print = new Print({
+        view,
+        printServiceUrl:
+          "https://utility.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task"
+      });
+
+      // Collapsible panels
+      const layerExpand = new Expand({
+        view,
+        content: layerList,
+        expanded: false
+      });
+
+      const legendExpand = new Expand({
+        view,
+        content: legend,
+        expanded: false
+      });
+
+      const measureExpand = new Expand({
+        view,
+        content: measurement,
+        expanded: false
+      });
+
+      const printExpand = new Expand({
+        view,
+        content: print,
+        expanded: false
+      });
+
+      // Add to UI (stacked top-left)
+      view.ui.add(layerExpand, "top-left");
+      view.ui.add(legendExpand, "top-left");
+      view.ui.add(measureExpand, "top-left");
+      view.ui.add(printExpand, "top-left");
+
+      // --- Enforce "one layer visible at a time" inside the group -------------
+      function enforceExclusiveVisibility(groupLayer) {
+        // When any child layer is turned on, turn the others off.
+        groupLayer.layers.forEach((child) => {
+          child.watch("visible", (isVisible) => {
+            if (!isVisible) return;
+            groupLayer.layers.forEach((other) => {
+              if (other !== child) other.visible = false;
+            });
+          });
+        });
+      }
+
+      view.when(async () => {
+        await webmap.load();
+        await webmap.when();
+
+        // Find your group layer by title
+        const groupLayer = webmap.allLayers.find((lyr) =>
+          lyr.type === "group" && lyr.title === EXCLUSIVE_GROUP_TITLE
+        );
+
+        if (!groupLayer) {
+          console.warn(
+            `Group layer titled "${EXCLUSIVE_GROUP_TITLE}" not found. ` +
+            "Double-check the group layer title in your Web Map."
+          );
+          return;
+        }
+
+        // Ensure at least one child is visible (nice UX)
+        const visibleChild = groupLayer.layers.find(l => l.visible);
+        if (!visibleChild && groupLayer.layers.length) {
+          groupLayer.layers.getItemAt(0).visible = true;
+        }
+
+        enforceExclusiveVisibility(groupLayer);
+      });
+
+    });
+  </script>
+</body>
+</html>
 
