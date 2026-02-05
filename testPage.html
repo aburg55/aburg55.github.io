@@ -161,13 +161,6 @@
       transition: transform 0.06s ease;
     }
 
-    /* === Secondary action (Share): white glass === */
-    .btnSecondaryAction {
-      background: rgba(255, 255, 255, 0.88);
-      color: #1a73e8;
-      backdrop-filter: blur(6px);
-    }
-
     .btn:disabled {
       opacity: 0.45;
       cursor: not-allowed;
@@ -175,9 +168,7 @@
       backdrop-filter: none;
     }
 
-    .btn:active {
-      transform: scale(0.97);
-    }
+    .btn:active { transform: scale(0.97); }
 
     .span-2 { grid-column: 1 / -1; }
 
@@ -271,6 +262,12 @@
       </svg>
     </button>
 
+    <button id="shareIconBtn" class="iconBtn" title="Share this map" aria-label="Share this map">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7-4.11A2.99 2.99 0 1 0 14 5c0 .24.04.47.09.7l-7 4.11A3 3 0 1 0 6 15c.76 0 1.44-.3 1.96-.77l7.13 4.15c-.05.2-.09.41-.09.62a3 3 0 1 0 3-2.92z"/>
+      </svg>
+    </button>
+
     <button id="searchBtn" class="iconBtn" title="Enter another address">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.48-5.34C15.21 5.01 12.2 2 8.6 2S2 5.01 2 8.39c0 3.38 3.01 6.39 6.6 6.39 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.99 4.88 1.49-1.46L15.5 14zm-6.9 0C6.01 14 4 11.99 4 9.39S6.01 4.78 8.6 4.78s4.6 2.01 4.6 4.61S11.19 14 8.6 14z"/>
@@ -299,13 +296,10 @@
     </div>
 
     <div id="actions">
-      <button id="zoomConnector" class="btn span-2" disabled>Zoom to Extents of Preferred Alignments</button>
+      <button id="zoomConnector" class="btn span-2" disabled>Zoom to extents of alignments identified for further consideration</button>
       <button id="zoomAddress" class="btn span-2" disabled>Zoom to Address Entered</button>
       <button id="radius1" class="btn" disabled>Show 1 Mile Radius</button>
       <button id="radius5" class="btn" disabled>Show 5 Mile Radius</button>
-
-      <!-- Share = secondary (white glass) -->
-      <button id="shareBtn" class="btn btnSecondaryAction span-2" disabled>Share This Map</button>
     </div>
   </div>
 
@@ -333,10 +327,10 @@
           <b>Blue circle</b> = 1-mile or 5-mile radius from your address
         </div>
         <div style="margin-bottom:10px;">
-          <b>Preferred alignments</b> = proposed roadway alignment options for this project
+          <b>Alignments identified for further consideration</b> = proposed roadway alignment options for this project
         </div>
         <div>
-          Tip: Use <b>Share This Map</b> to send the link to yourself or someone else.
+          Tip: Use the <b>share</b> button in the top-right to send the link to yourself or someone else.
         </div>
       </div>
       <div id="infoActions">
@@ -378,7 +372,8 @@
       const zoomAddressBtn = document.getElementById("zoomAddress");
       const radius1Btn = document.getElementById("radius1");
       const radius5Btn = document.getElementById("radius5");
-      const shareBtn = document.getElementById("shareBtn");
+
+      const shareIconBtn = document.getElementById("shareIconBtn");
       const hideRadiusLink = document.getElementById("hideRadiusLink");
       const toastEl = document.getElementById("toast");
 
@@ -396,7 +391,11 @@
         zoomAddressBtn.disabled = !enabled;
         radius1Btn.disabled = !enabled;
         radius5Btn.disabled = !enabled;
-        shareBtn.disabled = !enabled;
+
+        // Share icon still exists even if disabled, but we can prevent clicks
+        shareIconBtn.disabled = !enabled;
+        shareIconBtn.style.opacity = enabled ? "1" : "0.55";
+        shareIconBtn.style.cursor = enabled ? "pointer" : "not-allowed";
       }
 
       function showToastOncePerSession(text, ms=2200) {
@@ -653,7 +652,7 @@
       }
 
       async function zoomToReferenceLayerExtent() {
-        setStatus("Preferred alignments", "Calculating extents…", true);
+        setStatus("Alignments identified for further consideration", "Calculating extents…", true);
 
         try {
           await webmap.load();
@@ -677,7 +676,7 @@
           }
 
           await view.goTo(ext.expand(1.15));
-          setStatus("Preferred alignments", "Zoomed to preferred alignment extents.");
+          setStatus("Alignments identified for further consideration", "Zoomed to extents.");
         } catch (e) {
           console.error(e);
           setStatus("Error", "Could not zoom to extents.");
@@ -721,7 +720,10 @@
       zoomAddressBtn.addEventListener("click", zoomToSubmissionPoint);
       radius1Btn.addEventListener("click", () => showRadius(1));
       radius5Btn.addEventListener("click", () => showRadius(5));
-      shareBtn.addEventListener("click", shareCurrentMap);
+      shareIconBtn.addEventListener("click", () => {
+        if (shareIconBtn.disabled) return;
+        shareCurrentMap();
+      });
 
       /* =====================
          Locate the submission
@@ -782,4 +784,3 @@
 
 </body>
 </html>
-
